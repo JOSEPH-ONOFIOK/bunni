@@ -4,7 +4,14 @@ import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, useMotionValue, useSpring, useTransform } from "framer-motion";
-import { REALMS, DROP, bunnyFor, type Realm } from "@/lib/bunnies";
+import {
+  REALMS,
+  DROP,
+  DROP_PITCH,
+  bunnyFor,
+  type Realm,
+} from "@/lib/bunnies";
+import { useCountdown, pad } from "./use-countdown";
 import { Sky } from "./Sky";
 
 /**
@@ -233,13 +240,19 @@ function JoinPanel({
         <div className="inked rounded-[2rem] bg-white/90 p-8 backdrop-blur-sm sm:p-10">
           <p className="eyebrow text-ink/45">End of the trail</p>
 
-          <h2 className="wordmark mt-2 text-[clamp(2.2rem,8vw,3.6rem)] leading-[0.95]">
-            Come with us
+          <h2 className="wordmark mt-2 text-[clamp(2rem,7.5vw,3.4rem)] leading-[0.95]">
+            {DROP_PITCH.title}
           </h2>
 
+          <p className="wordmark mt-2 text-[clamp(1.1rem,4vw,1.6rem)] text-lava">
+            {DROP_PITCH.line}
+          </p>
+
+          <ClosingBanner />
+
           <p className="mx-auto mt-4 max-w-sm text-[15px] leading-relaxed font-semibold text-ink/75">
-            The mint is free and the supply is still being decided. The list is
-            the only way to be sure of a spot.
+            The supply is still being decided, so the list is the only way to be
+            sure of a spot.
           </p>
 
           <dl className="mt-6 flex justify-center gap-2">
@@ -351,6 +364,90 @@ function Ground({ progress }: { progress: ReturnType<typeof useSpring> }) {
   );
 }
 
+/**
+ * The closing clock as the join panel states it: a full-width band rather than
+ * the small chip in the corner, since this is the last thing read before the
+ * button.
+ */
+function ClosingBanner() {
+  const { left, closed } = useCountdown(DROP.closesAt);
+
+  return (
+    <p
+      className={`mt-5 inline-flex items-center gap-2 rounded-full border-2 px-4 py-2 font-mono text-[11px] font-bold tracking-[0.14em] uppercase ${
+        closed
+          ? "border-ink/15 bg-paper text-ink/45"
+          : "border-ink bg-lava text-white"
+      }`}
+      aria-label={
+        closed
+          ? "The allowlist has closed"
+          : left
+            ? `Allowlist closes in ${left.hours} hours ${left.minutes} minutes`
+            : "Allowlist closing soon"
+      }
+    >
+      {closed ? (
+        <span aria-hidden>Allowlist closed</span>
+      ) : (
+        <>
+          <span
+            aria-hidden
+            className="h-2 w-2 rounded-full bg-white"
+            style={{ animation: "pulse-gold 2.4s ease-out infinite" }}
+          />
+          <span aria-hidden>
+            {left
+              ? `Closes in ${pad(left.hours)}:${pad(left.minutes)}:${pad(left.seconds)}`
+              : "Closes soon"}
+          </span>
+        </>
+      )}
+    </p>
+  );
+}
+
+/**
+ * The closing clock that sits under the allowlist button. Renders a settled
+ * placeholder on the server and swaps to live digits once the clock starts,
+ * so the numbers never hydrate into a different value.
+ */
+function Closing() {
+  const { left, closed } = useCountdown(DROP.closesAt);
+
+  if (closed) {
+    return (
+      <span className="rounded-full border-2 border-ink/15 bg-white/80 px-2.5 py-1 font-mono text-[9px] tracking-[0.14em] text-ink/50 uppercase backdrop-blur-sm">
+        Allowlist closed
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className="flex items-center gap-1.5 rounded-full border-2 border-ink/15 bg-white/80 px-2.5 py-1 font-mono text-[9px] tracking-[0.14em] text-ink/60 uppercase backdrop-blur-sm"
+      // The digits change every second; announcing each tick would make a
+      // screen reader unusable, so the label carries the meaning instead.
+      aria-label={
+        left
+          ? `Allowlist closes in ${left.hours} hours ${left.minutes} minutes`
+          : "Allowlist closing soon"
+      }
+    >
+      <span
+        aria-hidden
+        className="h-1.5 w-1.5 rounded-full bg-lava"
+        style={{ animation: "pulse-gold 2.4s ease-out infinite" }}
+      />
+      <span aria-hidden>
+        {left
+          ? `Closes in ${pad(left.hours)}:${pad(left.minutes)}:${pad(left.seconds)}`
+          : "Closes soon"}
+      </span>
+    </span>
+  );
+}
+
 /** Wordmark, mint pill, and the realm pager along the bottom. */
 function Chrome({
   index,
@@ -369,13 +466,15 @@ function Chrome({
           </p>
         </div>
 
-        <a
-          href="/join"
-          className="inked-sm pointer-events-auto shrink-0 rounded-full bg-gold px-4 py-2.5 text-[10px] font-extrabold tracking-[0.14em] text-ink uppercase transition-transform duration-200 hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-[0_2px_0_0_var(--ink)] sm:px-5 sm:text-[11px]"
-        >
-          Free mint
-          <span className="hidden sm:inline"> · {DROP.supply} supply</span>
-        </a>
+        <div className="pointer-events-auto flex shrink-0 flex-col items-end gap-1.5">
+          <Link
+            href="/join"
+            className="inked-sm rounded-full bg-gold px-4 py-2.5 text-[10px] font-extrabold tracking-[0.14em] text-ink uppercase transition-transform duration-200 hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-[0_2px_0_0_var(--ink)] sm:px-5 sm:text-[11px]"
+          >
+            Enter the allowlist
+          </Link>
+          <Closing />
+        </div>
       </div>
 
       {/* The pager doubles as the map: where you are, and how far is left. */}

@@ -19,6 +19,22 @@ export const DROP = {
   supply: "TBA",
   price: "Free",
   date: "TBA",
+
+  /**
+   * When the allowlist closes, as an ISO instant with an explicit offset — so
+   * the deadline is the same moment for everyone, whatever timezone they open
+   * the page in. Set this to the real closing time before launch; until it is
+   * in the future the countdown renders as closed rather than inventing time.
+   *
+   * TODO: set to the real deadline.
+   */
+  closesAt: "2026-09-20T18:00:00Z",
+} as const;
+
+/** The headline the drop is announced with. */
+export const DROP_PITCH = {
+  title: "The Bunii world is open",
+  line: "Free mint for the rabbit",
 } as const;
 
 export const BUNNIES: Bunny[] = [
