@@ -91,7 +91,9 @@ export function Quests({
                 </p>
 
                 {quest.phrase && (
-                  <p className="mt-2 rounded-xl border-2 border-dashed border-ink/15 bg-paper px-3 py-2 text-xs font-semibold">
+                  // The phrase is multi-line and people copy it by eye, so it
+                  // has to render with its breaks rather than as one run-on.
+                  <p className="mt-2 rounded-xl border-2 border-dashed border-ink/15 bg-paper px-3 py-2 text-xs leading-relaxed font-semibold whitespace-pre-line">
                     {quest.phrase}
                   </p>
                 )}

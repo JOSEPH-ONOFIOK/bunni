@@ -1,22 +1,29 @@
 /** Shared by the client checklist and the server-side submit guard. */
 
-/** TODO: set to the real Bunii account before launch. */
-export const X_ACCOUNT = "buniiworld";
+export const X_ACCOUNT = "bunionrh";
 
-export const QUOTE_PHRASE = "The Bunii world is open. 🐇";
+/**
+ * The exact text a quote post has to contain. The server checks for it after
+ * normalising case, whitespace and emoji variation selectors, so a quote that
+ * picked up different spacing on its way through a client still passes — but
+ * the words themselves have to be there.
+ */
+export const QUOTE_PHRASE =
+  "The Bunii world is open\n\nFree mint for the rabbit\n\nCloses in 24hrs";
 
 /**
  * Numeric status id of the pinned post — the digits at the end of its URL.
+ * https://x.com/bunionrh/status/2101298583387451632
  *
  * A plain constant with no env override. It is public the moment the page
  * renders, so there is nothing to hide, and an override meant a stale value
  * left in the host's dashboard could quietly beat the committed one — the
  * deployed links going wrong while local looked fine. Change it here.
  *
- * Empty until the post exists: `questLinkFor` falls back to the profile, so
- * the quests still work before there is anything pinned.
+ * With this set, the quote quest requires a quote of *this* post, not merely
+ * of the account.
  */
-export const PINNED_POST_ID = "";
+export const PINNED_POST_ID = "2101298583387451632";
 
 export type QuestId = "follow" | "boost" | "quote" | "tag";
 
