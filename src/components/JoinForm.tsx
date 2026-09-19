@@ -13,6 +13,8 @@ import {
 import { Quests, type QuoteCheck } from "./Quests";
 import { clearQuestState, useQuestState } from "@/lib/quest-store";
 import { allQuestsDone } from "@/lib/quests";
+import { DROP, DROP_PITCH } from "@/lib/bunnies";
+import { useCountdown, pad } from "./use-countdown";
 
 type Status = "idle" | "submitting" | "success" | "error";
 
@@ -28,6 +30,11 @@ export function JoinForm({
   const x = useXAccount(account);
   const [quests, setQuests] = useQuestState();
   useScrubOAuthParam(oauthStatus);
+
+  // The pitch is the first thing on the page; the steps only appear once the
+  // visitor has pressed Enter. Keeping it in state rather than on a separate
+  // route means pressing Enter costs no navigation and loses no quest progress.
+  const [entered, setEntered] = useState(false);
 
   // The quote gate's verdict, owned here because it also blocks submit.
   const [quoteCheck, setQuoteCheck] = useState<QuoteCheck>({ state: "idle" });
@@ -125,15 +132,81 @@ export function JoinForm({
     );
   }
 
+  // The pitch, and the door into the steps.
+  if (!entered) {
+    return (
+      <motion.div
+        className="inked rounded-[2rem] bg-white p-8 text-center sm:p-10"
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, ease: EASE }}
+      >
+        <p className="eyebrow text-ink/45">End of the trail</p>
+
+        <h2 className="wordmark mt-2 text-[clamp(2rem,7.5vw,3.4rem)] leading-[0.95]">
+          {DROP_PITCH.title}
+        </h2>
+
+        <p className="wordmark mt-2 text-[clamp(1.1rem,4vw,1.6rem)] text-lava">
+          {DROP_PITCH.line}
+        </p>
+
+        <ClosingBanner />
+
+        <p className="mx-auto mt-4 max-w-sm text-[15px] leading-relaxed font-semibold text-ink/75">
+          The supply is still being decided, so the list is the only way to be
+          sure of a spot.
+        </p>
+
+        <dl className="mt-6 flex justify-center gap-2">
+          {[
+            ["Mint", DROP.price],
+            ["Supply", DROP.supply],
+            ["Date", DROP.date],
+          ].map(([k, v]) => (
+            <div
+              key={k}
+              className="rounded-2xl border-2 border-ink/12 bg-paper px-4 py-2.5"
+            >
+              <dt className="font-mono text-[9px] tracking-[0.18em] text-ink/40 uppercase">
+                {k}
+              </dt>
+              <dd className="wordmark mt-0.5 text-lg">{v}</dd>
+            </div>
+          ))}
+        </dl>
+
+        <button
+          type="button"
+          onClick={() => setEntered(true)}
+          className="inked mt-7 rounded-full bg-gold px-10 py-4 text-xs font-extrabold tracking-[0.18em] text-ink uppercase transition-transform duration-200 hover:-translate-y-0.5 active:translate-y-1 active:shadow-[0_2px_0_0_var(--ink)]"
+        >
+          Enter
+        </button>
+
+        <p className="mt-3 font-mono text-[10px] tracking-wider text-ink/35 uppercase">
+          Four steps · then your wallet
+          {count !== null ? ` · ${count} already in` : ""}
+        </p>
+      </motion.div>
+    );
+  }
+
   return (
-    <form onSubmit={handleSubmit} className="inked rounded-3xl bg-white p-6 sm:p-8">
+    <motion.form
+      onSubmit={handleSubmit}
+      className="inked rounded-3xl bg-white p-6 sm:p-8"
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.45, ease: EASE }}
+    >
       <header className="text-center">
         <p className="eyebrow text-ink/45">Free mint</p>
-        <h2 className="wordmark mt-2 text-4xl sm:text-5xl">Join the list</h2>
+        <h2 className="wordmark mt-2 text-4xl sm:text-5xl">The steps</h2>
         <p className="mx-auto mt-3 max-w-sm text-sm leading-relaxed text-ink/65">
-          Four steps and a wallet. Supply is still being decided, so the list is
-          the only way to be sure of a spot.
+          Clear all four, then drop your wallet in at the bottom.
         </p>
+        <ClosingBanner compact />
         {count !== null && (
           <p className="mt-2 font-mono text-[10px] tracking-wider text-ink/40 uppercase">
             {count} already in
@@ -243,6 +316,58 @@ export function JoinForm({
           Connect X to unlock the steps.
         </p>
       )}
-    </form>
+    </motion.form>
+  );
+}
+
+/**
+ * The closing clock. Loud on the pitch, quiet above the steps — the deadline
+ * still has to be visible while someone is working through them, but it should
+ * not compete with the form.
+ */
+function ClosingBanner({ compact = false }: { compact?: boolean }) {
+  const { left, closed } = useCountdown(DROP.closesAt);
+
+  const label = closed
+    ? "The allowlist has closed"
+    : left
+      ? `Allowlist closes in ${left.hours} hours ${left.minutes} minutes`
+      : "Allowlist closing soon";
+
+  const text = closed
+    ? "Allowlist closed"
+    : left
+      ? `Closes in ${pad(left.hours)}:${pad(left.minutes)}:${pad(left.seconds)}`
+      : "Closes soon";
+
+  if (compact) {
+    return (
+      <p
+        className="mt-3 font-mono text-[10px] tracking-[0.14em] text-ink/45 uppercase"
+        aria-label={label}
+      >
+        <span aria-hidden>{text}</span>
+      </p>
+    );
+  }
+
+  return (
+    <p
+      className={`mt-5 inline-flex items-center gap-2 rounded-full border-2 px-4 py-2 font-mono text-[11px] font-bold tracking-[0.14em] uppercase ${
+        closed
+          ? "border-ink/15 bg-paper text-ink/45"
+          : "border-ink bg-lava text-white"
+      }`}
+      aria-label={label}
+    >
+      {!closed && (
+        <span
+          aria-hidden
+          className="h-2 w-2 rounded-full bg-white"
+          style={{ animation: "pulse-gold 2.4s ease-out infinite" }}
+        />
+      )}
+      <span aria-hidden>{text}</span>
+    </p>
   );
 }

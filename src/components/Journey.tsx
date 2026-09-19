@@ -4,13 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, useMotionValue, useSpring, useTransform } from "framer-motion";
-import {
-  REALMS,
-  DROP,
-  DROP_PITCH,
-  bunnyFor,
-  type Realm,
-} from "@/lib/bunnies";
+import { REALMS, DROP, bunnyFor, type Realm } from "@/lib/bunnies";
 import { useCountdown, pad } from "./use-countdown";
 import { Sky } from "./Sky";
 
@@ -237,52 +231,25 @@ function JoinPanel({
       aria-hidden={!isHere}
     >
       <motion.div className="w-full max-w-md text-center" style={{ x: copyX }}>
+        {/* The pitch itself lives on /join, where it gates the steps — this is
+            just the doorway at the end of the world. */}
         <div className="inked rounded-[2rem] bg-white/90 p-8 backdrop-blur-sm sm:p-10">
           <p className="eyebrow text-ink/45">End of the trail</p>
 
           <h2 className="wordmark mt-2 text-[clamp(2rem,7.5vw,3.4rem)] leading-[0.95]">
-            {DROP_PITCH.title}
+            Come with us
           </h2>
 
-          <p className="wordmark mt-2 text-[clamp(1.1rem,4vw,1.6rem)] text-lava">
-            {DROP_PITCH.line}
-          </p>
-
-          <ClosingBanner />
-
           <p className="mx-auto mt-4 max-w-sm text-[15px] leading-relaxed font-semibold text-ink/75">
-            The supply is still being decided, so the list is the only way to be
-            sure of a spot.
+            The mint is free and the list closes soon. That is the whole pitch.
           </p>
-
-          <dl className="mt-6 flex justify-center gap-2">
-            {[
-              ["Mint", DROP.price],
-              ["Supply", DROP.supply],
-              ["Date", DROP.date],
-            ].map(([k, v]) => (
-              <div
-                key={k}
-                className="rounded-2xl border-2 border-ink/12 bg-paper px-4 py-2.5"
-              >
-                <dt className="font-mono text-[9px] tracking-[0.18em] text-ink/40 uppercase">
-                  {k}
-                </dt>
-                <dd className="wordmark mt-0.5 text-lg">{v}</dd>
-              </div>
-            ))}
-          </dl>
 
           <Link
             href="/join"
             className="inked mt-7 inline-block rounded-full bg-gold px-10 py-4 text-xs font-extrabold tracking-[0.18em] text-ink uppercase transition-transform duration-200 hover:-translate-y-0.5 active:translate-y-1 active:shadow-[0_2px_0_0_var(--ink)]"
           >
-            Join the list
+            Enter the allowlist
           </Link>
-
-          <p className="mt-3 font-mono text-[10px] tracking-wider text-ink/35 uppercase">
-            Four steps · no wallet needed yet
-          </p>
         </div>
       </motion.div>
     </motion.section>
@@ -361,49 +328,6 @@ function Ground({ progress }: { progress: ReturnType<typeof useSpring> }) {
         />
       </svg>
     </motion.div>
-  );
-}
-
-/**
- * The closing clock as the join panel states it: a full-width band rather than
- * the small chip in the corner, since this is the last thing read before the
- * button.
- */
-function ClosingBanner() {
-  const { left, closed } = useCountdown(DROP.closesAt);
-
-  return (
-    <p
-      className={`mt-5 inline-flex items-center gap-2 rounded-full border-2 px-4 py-2 font-mono text-[11px] font-bold tracking-[0.14em] uppercase ${
-        closed
-          ? "border-ink/15 bg-paper text-ink/45"
-          : "border-ink bg-lava text-white"
-      }`}
-      aria-label={
-        closed
-          ? "The allowlist has closed"
-          : left
-            ? `Allowlist closes in ${left.hours} hours ${left.minutes} minutes`
-            : "Allowlist closing soon"
-      }
-    >
-      {closed ? (
-        <span aria-hidden>Allowlist closed</span>
-      ) : (
-        <>
-          <span
-            aria-hidden
-            className="h-2 w-2 rounded-full bg-white"
-            style={{ animation: "pulse-gold 2.4s ease-out infinite" }}
-          />
-          <span aria-hidden>
-            {left
-              ? `Closes in ${pad(left.hours)}:${pad(left.minutes)}:${pad(left.seconds)}`
-              : "Closes soon"}
-          </span>
-        </>
-      )}
-    </p>
   );
 }
 
