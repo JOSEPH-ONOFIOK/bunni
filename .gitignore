@@ -47,3 +47,10 @@ next-env.d.ts
 
 # source images, kept locally; the site uses the named copies in public/pfp
 /public/WhatsApp Image*
+
+# unused create-next-app scaffold art
+/public/next.svg
+/public/vercel.svg
+/public/globe.svg
+/public/window.svg
+/public/file.svg
