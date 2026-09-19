@@ -1,4 +1,4 @@
-import { PINNED_POST_ID, QUOTE_PHRASE, X_ACCOUNT } from "./quests";
+import { QUOTE_PHRASE, X_ACCOUNT, isAcceptedPost } from "./quests";
 
 /**
  * Reads a single public post through X's syndication endpoint — the same one
@@ -170,7 +170,7 @@ export async function verifyQuotePost(
   const target = quoteTargetFrom(post);
 
   if (target.id) {
-    if (PINNED_POST_ID && target.id !== PINNED_POST_ID) {
+    if (!isAcceptedPost(target.id)) {
       return {
         ok: false,
         hard: true,

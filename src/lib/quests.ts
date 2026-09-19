@@ -12,18 +12,33 @@ export const QUOTE_PHRASE =
   "The Bunii world is open\n\nFree mint on Robinhood\n\nCloses in 48hrs";
 
 /**
- * Numeric status id of the pinned post — the digits at the end of its URL.
- * https://x.com/bunionrh/status/2101298583387451632
+ * The posts a quote may point at — newest first.
  *
- * A plain constant with no env override. It is public the moment the page
+ * A list rather than one id, because the announcement post can be replaced
+ * mid-drop. Rotating a single id would reject everyone who had already quoted
+ * the previous one, stranding entries that were honestly earned; keeping the
+ * old id here costs nothing and keeps those people valid.
+ *
+ *   [0] https://x.com/bunionrh/status/2101356079699439883  (current pin)
+ *   [1] https://x.com/bunionrh/status/2101298583387451632  (first announcement)
+ *
+ * Plain constants with no env override. They are public the moment the page
  * renders, so there is nothing to hide, and an override meant a stale value
  * left in the host's dashboard could quietly beat the committed one — the
- * deployed links going wrong while local looked fine. Change it here.
- *
- * With this set, the quote quest requires a quote of *this* post, not merely
- * of the account.
+ * deployed links going wrong while local looked fine. Change them here.
  */
-export const PINNED_POST_ID = "2101298583387451632";
+export const ACCEPTED_POST_IDS = [
+  "2101356079699439883",
+  "2101298583387451632",
+] as const;
+
+/** The post the quest links to and asks people to quote. */
+export const PINNED_POST_ID = ACCEPTED_POST_IDS[0];
+
+/** True when a quote points at any post we still accept. */
+export function isAcceptedPost(id: string): boolean {
+  return (ACCEPTED_POST_IDS as readonly string[]).includes(id);
+}
 
 export type QuestId = "follow" | "boost" | "quote" | "tag";
 
