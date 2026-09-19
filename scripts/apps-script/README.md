@@ -60,14 +60,20 @@ redeploy — env changes don't apply to existing deployments.
 ## 5. Check it works
 
 From the Apps Script editor, run `selfTest` (pick it in the function dropdown,
-press **Run**) and open **Execution log**. You should see:
+press **Run**) and open **Execution log**. It submits a test entry, submits it
+again to prove the duplicate check fires, and checks the count moved by exactly
+one. The last line is the verdict:
 
 ```
-POST -> {"position":1}
-GET  -> {"count":1}
+count before      : 0
+submit            : {"position":1}
+submit again      : {"error":"duplicate"}
+count after       : 1
+PASS — wiring is good. Delete the @test row before going live.
 ```
 
-Then delete that test row from the sheet.
+On `FAIL`, the lines above it say which step went wrong. On `PASS`, delete the
+`@test` row from the sheet.
 
 Once the site is deployed, the join form's "N already in" counter reads from
 this endpoint — if it shows a number, the wiring is good.

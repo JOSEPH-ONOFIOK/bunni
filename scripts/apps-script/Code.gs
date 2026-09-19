@@ -80,12 +80,22 @@ function doPost(e) {
     var rows = sheet.getLastRow() - 1; // minus the header row
 
     if (rows > 0) {
-      // Read both key columns in one call. Reading the whole sheet per
-      // submission is the slow path that makes Apps Script time out.
-      var values = sheet.getRange(2, 2, rows, 4).getValues(); // B..E
+      // Both key columns in one read: fetching the whole sheet per submission
+      // is the slow path that eventually times Apps Script out. The columns
+      // are looked up by header rather than hard-coded, so reordering the
+      // sheet can't silently point the duplicate check at the wrong data.
+      var walletCol = HEADERS.indexOf('Wallet') + 1;
+      var xIdCol = HEADERS.indexOf('X User ID') + 1;
+      var first = Math.min(walletCol, xIdCol);
+      var width = Math.abs(xIdCol - walletCol) + 1;
+
+      var values = sheet.getRange(2, first, rows, width).getValues();
+      var walletAt = walletCol - first;
+      var xIdAt = xIdCol - first;
+
       for (var i = 0; i < values.length; i++) {
-        var rowWallet = String(values[i][1] || '').trim();
-        var rowXId = String(values[i][3] || '').trim();
+        var rowWallet = String(values[i][walletAt] || '').trim();
+        var rowXId = String(values[i][xIdAt] || '').trim();
 
         if (rowWallet.toLowerCase() === wallet.toLowerCase()) {
           return json({ error: 'duplicate' });
@@ -96,14 +106,16 @@ function doPost(e) {
       }
     }
 
-    sheet.appendRow([
-      new Date().toISOString(),
-      handle,
-      wallet,
-      inviteCode,
-      xUserId,
-      quoteLink,
-    ]);
+    // Built from HEADERS for the same reason: the row's shape follows the
+    // header order rather than being written out positionally.
+    var row = [];
+    row[HEADERS.indexOf('Joined At')] = new Date().toISOString();
+    row[HEADERS.indexOf('Handle')] = handle;
+    row[HEADERS.indexOf('Wallet')] = wallet;
+    row[HEADERS.indexOf('Invite Code')] = inviteCode;
+    row[HEADERS.indexOf('X User ID')] = xUserId;
+    row[HEADERS.indexOf('Quote Link')] = quoteLink;
+    sheet.appendRow(row);
 
     // Position is 1-based and counts entries, not spreadsheet rows.
     return json({ position: sheet.getLastRow() - 1 });
@@ -150,22 +162,43 @@ function json(obj) {
 // --- manual test ------------------------------------------------------
 
 /**
- * Run this from the Apps Script editor to check the sheet wiring before
- * pointing the site at it. It writes a row, so delete it afterwards.
+ * Run this from the Apps Script editor to check the wiring before pointing the
+ * site at it, then read the Execution log. It exercises the real handlers, so
+ * it writes a test row and then a duplicate of it — delete the row afterwards.
  */
 function selfTest() {
-  var res = doPost({
-    postData: {
-      contents: JSON.stringify({
-        secret: SHARED_SECRET,
-        handle: '@test',
-        wallet: '0x0000000000000000000000000000000000000001',
-        inviteCode: 'BUNII-TEST01',
-        xUserId: 'test-user-id',
-        quoteLink: 'https://x.com/test/status/1234567890123456789',
-      }),
-    },
-  });
-  Logger.log('POST -> ' + res.getContent());
-  Logger.log('GET  -> ' + doGet({}).getContent());
+  var entry = {
+    secret: SHARED_SECRET,
+    handle: '@test',
+    wallet: '0x0000000000000000000000000000000000000001',
+    inviteCode: 'BUNII-TEST01',
+    xUserId: 'selftest-user-id',
+    quoteLink: 'https://x.com/test/status/1234567890123456789',
+  };
+  var send = function (body) {
+    return JSON.parse(
+      doPost({ postData: { contents: JSON.stringify(body) } }).getContent()
+    );
+  };
+
+  var before = JSON.parse(doGet({}).getContent()).count;
+  var added = send(entry);
+  var again = send(entry);
+  var after = JSON.parse(doGet({}).getContent()).count;
+
+  Logger.log('count before      : ' + before);
+  Logger.log('submit            : ' + JSON.stringify(added));
+  Logger.log('submit again      : ' + JSON.stringify(again));
+  Logger.log('count after       : ' + after);
+
+  var ok =
+    typeof added.position === 'number' &&
+    again.error === 'duplicate' &&
+    after === before + 1;
+
+  Logger.log(
+    ok
+      ? 'PASS — wiring is good. Delete the @test row before going live.'
+      : 'FAIL — see the lines above; the site will not work against this sheet.'
+  );
 }
