@@ -1,0 +1,200 @@
+@import "tailwindcss";
+
+/* ------------------------------------------------------------------
+   BUNII — a bright little world you scroll through
+   Palette lifted from the drop: the teal of the sage's fur, the gold
+   of the seraph's wings, lava orange, and a lot of daylight sky.
+------------------------------------------------------------------- */
+
+:root {
+  --sky: #cfe6ff;
+  --sky-deep: #8ec4f5;
+  --cloud: #ffffff;
+  --paper: #fdf8ec;
+  --ink: #16212e;
+  --ink-soft: rgba(22, 33, 46, 0.62);
+
+  --teal: #17b3b0;
+  --teal-deep: #0e7f80;
+  --gold: #f5c344;
+  --gold-deep: #e0a21c;
+  --lava: #ff6a2b;
+  --grass: #7bc86c;
+  --berry: #f2768f;
+
+  --line: rgba(22, 33, 46, 0.12);
+  --line-soft: rgba(22, 33, 46, 0.06);
+
+  --font-display: "Baloo 2", "Fredoka", system-ui, sans-serif;
+  --font-body: "Nunito", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+}
+
+@theme inline {
+  --color-sky: var(--sky);
+  --color-sky-deep: var(--sky-deep);
+  --color-cloud: var(--cloud);
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
+  --color-teal: var(--teal);
+  --color-teal-deep: var(--teal-deep);
+  --color-gold: var(--gold);
+  --color-gold-deep: var(--gold-deep);
+  --color-lava: var(--lava);
+  --color-grass: var(--grass);
+  --color-berry: var(--berry);
+  --color-line: var(--line);
+
+  --font-display: var(--font-display);
+  --font-body: var(--font-body);
+  --font-mono: var(--font-mono);
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  /* The journey fills 100svh, but on browsers where svh and the real viewport
+     disagree (a retracting mobile URL bar, some headless sizes) a sliver of the
+     root shows through under it — so the root wears the ground colour the
+     journey ends on rather than a contrasting blue. */
+  background: var(--paper);
+  scroll-behavior: smooth;
+  /* 3D scenes place children well outside their section, and only the root
+     clip reliably keeps a phone from finding something to scroll sideways to. */
+  overflow-x: clip;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  overflow-x: clip;
+}
+
+::selection {
+  background: var(--gold);
+  color: var(--ink);
+}
+
+/* ---------------------------- 3D primitives ---------------------- */
+
+.stage-near {
+  perspective: 700px;
+}
+
+/* The chunky cartoon outline the artwork itself is drawn with — the one
+   detail that ties flat UI to the PFPs. */
+.inked {
+  border: 3px solid var(--ink);
+  box-shadow: 0 6px 0 0 var(--ink);
+}
+
+.inked-sm {
+  border: 2px solid var(--ink);
+  box-shadow: 0 4px 0 0 var(--ink);
+}
+
+/* ---------------------------- Texture ---------------------------- */
+
+/* Sized to the viewport, not oversized and shifted: an inset of -50% on a
+   fixed layer grows the layout viewport and gives the whole document a
+   horizontal scrollbar on phones. */
+.grain::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  pointer-events: none;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+}
+
+/* ---------------------------- Type --------------------------------- */
+
+.wordmark {
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 0.85;
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+}
+
+/* ---------------------------- Motion ------------------------------- */
+
+@keyframes bob {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(0, -14px, 0);
+  }
+}
+
+.bob {
+  animation: bob var(--bob-dur, 6s) ease-in-out infinite;
+  animation-delay: var(--bob-delay, 0s);
+}
+
+/* Clouds drifting across the sky band, slower and further than the bob. */
+@keyframes drift {
+  from {
+    transform: translate3d(-10%, 0, 0);
+  }
+  to {
+    transform: translate3d(110%, 0, 0);
+  }
+}
+
+.drift {
+  animation: drift var(--drift-dur, 60s) linear infinite;
+  animation-delay: var(--drift-delay, 0s);
+}
+
+@keyframes pulse-gold {
+  0%,
+  100% {
+    box-shadow: 0 6px 0 0 var(--ink), 0 0 0 0 rgba(245, 195, 68, 0.55);
+  }
+  70% {
+    box-shadow: 0 6px 0 0 var(--ink), 0 0 0 18px rgba(245, 195, 68, 0);
+  }
+}
+
+/* Firefox and the standards property, plus the WebKit pseudo-element: without
+   all three a horizontal scroller still reserves gutter height inside a
+   100svh box and leaves a bare strip under the content. */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .bob,
+  .drift {
+    animation: none !important;
+  }
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+  }
+}
