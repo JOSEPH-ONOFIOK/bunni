@@ -9,7 +9,7 @@ export const X_ACCOUNT = "bunionrh";
  * the words themselves have to be there.
  */
 export const QUOTE_PHRASE =
-  "The Bunii world is open\n\nFree mint for the rabbit\n\nCloses in 48hrs";
+  "The Bunii world is open\n\nFree mint on Robinhood\n\nCloses in 48hrs";
 
 /**
  * Numeric status id of the pinned post — the digits at the end of its URL.

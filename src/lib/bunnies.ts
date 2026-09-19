@@ -34,7 +34,7 @@ export const DROP = {
 /** The headline the drop is announced with. */
 export const DROP_PITCH = {
   title: "The Bunii world is open",
-  line: "Free mint for the rabbit",
+  line: "Free mint on Robinhood",
 } as const;
 
 export const BUNNIES: Bunny[] = [
