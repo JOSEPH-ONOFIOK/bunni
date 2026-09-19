@@ -21,14 +21,14 @@ export const DROP = {
   date: "TBA",
 
   /**
-   * When the allowlist closes, as an ISO instant with an explicit offset — so
-   * the deadline is the same moment for everyone, whatever timezone they open
-   * the page in. Set this to the real closing time before launch; until it is
-   * in the future the countdown renders as closed rather than inventing time.
+   * When the allowlist closes, as an ISO instant in UTC — so the deadline is
+   * the same moment for everyone, whatever timezone they open the page in, and
+   * the countdown is a real figure rather than a fresh 24h per visitor.
    *
-   * TODO: set to the real deadline.
+   * Set 2026-09-19, to run 48 hours. Once it passes, every countdown on the
+   * site reads "Allowlist closed" on its own; move this and redeploy to extend.
    */
-  closesAt: "2026-09-20T18:00:00Z",
+  closesAt: "2026-09-21T15:00:00Z",
 } as const;
 
 /** The headline the drop is announced with. */
