@@ -1,12 +1,12 @@
 import Image from "next/image";
 import Link from "next/link";
 import { JoinForm } from "@/components/JoinForm";
-import { BUNNIES } from "@/lib/bunnies";
 import { currentAccount } from "@/lib/x-session";
 import { signupsOpen } from "@/lib/allowlist-status";
 
 export const metadata = {
-  title: "BUNII — Join the list",
+  // The root layout's template turns this into "Join the list — BUNII".
+  title: "Join the list",
   description:
     "Four steps and a wallet. The free-mint list is the only way to be sure of a spot.",
 };
@@ -43,22 +43,16 @@ export default async function Join({ searchParams }: PageProps<"/join">) {
         </nav>
 
         {/* The crew, as a reminder of what the list is for. */}
-        <div className="mb-8 flex justify-center -space-x-3">
-          {BUNNIES.map((b) => (
-            <div
-              key={b.id}
-              className="h-14 w-14 overflow-hidden rounded-2xl border-[3px] border-ink bg-white"
-            >
-              <Image
-                src={b.src}
-                alt=""
-                width={120}
-                height={120}
-                className="h-full w-full object-cover"
-                sizes="56px"
-              />
-            </div>
-          ))}
+        <div className="inked mb-8 overflow-hidden rounded-3xl bg-white">
+          <Image
+            src="/brand-banner.png"
+            alt="The Bunii crew, taking a selfie"
+            width={1500}
+            height={500}
+            className="h-auto w-full"
+            sizes="(max-width: 640px) 100vw, 512px"
+            priority
+          />
         </div>
 
         {signupsOpen() ? (

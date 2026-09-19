@@ -54,3 +54,6 @@ next-env.d.ts
 /public/globe.svg
 /public/window.svg
 /public/file.svg
+
+# the banner is committed as brand-banner.png
+/public/IMG_*.PNG
