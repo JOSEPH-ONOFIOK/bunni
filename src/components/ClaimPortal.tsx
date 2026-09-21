@@ -4,7 +4,12 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { FiCheck, FiChevronLeft, FiLoader } from "react-icons/fi";
+import {
+  FiCheck,
+  FiChevronLeft,
+  FiLoader,
+  FiLock,
+} from "react-icons/fi";
 import {
   COMMUNITIES,
   CLAIM_CAP,
@@ -12,7 +17,8 @@ import {
   type Community,
 } from "@/lib/communities";
 import { claimMessage } from "@/lib/claim-message";
-import { connect, signMessage } from "@/lib/wallet";
+import { shortAddress, signMessage } from "@/lib/wallet";
+import { useClaimWallet, type ClaimWallet } from "./use-claim-wallet";
 
 type Status = "idle" | "checking" | "claimed" | "error";
 
@@ -27,6 +33,7 @@ const EASE = [0.16, 1, 0.3, 1] as const;
  * signing is what makes it the claimant's own.
  */
 export function ClaimPortal() {
+  const wallet = useClaimWallet();
   const [picked, setPicked] = useState<Community | null>(null);
   const [status, setStatus] = useState<Status>("idle");
   const [message, setMessage] = useState("");
@@ -63,11 +70,13 @@ export function ClaimPortal() {
 
     try {
       // 1. The wallet hands back an address it controls. A pasted address
-      //    would only ever be a claim about someone else's property.
-      const [address] = await connect();
+      //    would only ever be a claim about someone else's property. If one is
+      //    already connected from the header, reuse it rather than prompting
+      //    a second time.
+      const address = wallet.address ?? (await wallet.connect());
       if (!address) {
         setStatus("error");
-        setMessage("No wallet account was shared.");
+        setMessage(wallet.error ?? "No wallet account was shared.");
         return;
       }
 
@@ -143,12 +152,15 @@ export function ClaimPortal() {
         <Link href="/" className="wordmark text-2xl">
           BUNII
         </Link>
-        <Link
-          href="/join"
-          className="text-[11px] font-bold text-ink/50 underline underline-offset-2 hover:text-ink"
-        >
-          No NFT? Join by quests
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link
+            href="/join"
+            className="hidden text-[11px] font-bold text-ink/50 underline underline-offset-2 hover:text-ink sm:inline"
+          >
+            No NFT? Join by quests
+          </Link>
+          <WalletButton wallet={wallet} />
+        </div>
       </nav>
 
       <header className="text-center">
@@ -214,11 +226,97 @@ export function ClaimPortal() {
               open={open}
             />
           ) : (
-            <Grid key="grid" onPick={setPicked} />
+            <Grid key="grid" onPick={setPicked} wallet={wallet} />
           )}
         </AnimatePresence>
       </div>
     </div>
+  );
+}
+
+/** One community, in whichever state the connected wallet puts it. */
+function CommunityCard({
+  community,
+  onPick,
+  held,
+}: {
+  community: Community;
+  onPick: (c: Community) => void;
+  held?: boolean;
+}) {
+  // Only dim on a definite "no". Unknown stays fully clickable: someone whose
+  // lookup failed can still try, and the claim itself is the real check.
+  const dimmed = held === false;
+
+  return (
+    <button
+      type="button"
+      onClick={() => onPick(community)}
+      aria-disabled={dimmed}
+      className={`inked relative w-full rounded-2xl bg-white p-3 text-left transition-transform duration-200 hover:-translate-y-1 active:translate-y-0.5 active:shadow-[0_2px_0_0_var(--ink)] ${
+        dimmed ? "opacity-45" : ""
+      }`}
+    >
+      <Badge community={community} className="aspect-square w-full text-3xl" />
+
+      <span className="mt-2.5 block text-center text-xs font-extrabold">
+        {community.name}
+      </span>
+
+      {held === true && (
+        <span
+          aria-label="You hold this"
+          className="inked-sm absolute -top-2 -right-2 flex h-7 w-7 items-center justify-center rounded-full bg-grass"
+        >
+          <FiCheck className="h-3.5 w-3.5" />
+        </span>
+      )}
+
+      {dimmed && (
+        <span
+          aria-label="Not in this collection"
+          className="absolute -top-2 -right-2 flex h-7 w-7 items-center justify-center rounded-full border-2 border-ink bg-white"
+        >
+          <FiLock className="h-3 w-3 text-ink/40" />
+        </span>
+      )}
+    </button>
+  );
+}
+
+/**
+ * Connect, and then show which address is connected. Connecting here is
+ * optional — the claim will prompt if it has to — but doing it up front is
+ * what lets the grid say which communities are actually claimable.
+ */
+function WalletButton({ wallet }: { wallet: ClaimWallet }) {
+  if (wallet.address) {
+    return (
+      <button
+        type="button"
+        onClick={wallet.disconnect}
+        title="Forget this wallet"
+        className="inked-sm flex items-center gap-2 rounded-full bg-white px-3.5 py-2 font-mono text-[11px] font-bold text-ink transition-transform duration-200 hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-[0_2px_0_0_var(--ink)]"
+      >
+        <span
+          aria-hidden
+          className={`h-2 w-2 rounded-full ${
+            wallet.checking ? "bg-gold" : "bg-grass"
+          }`}
+        />
+        {shortAddress(wallet.address)}
+      </button>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => void wallet.connect()}
+      className="inked-sm rounded-full bg-teal px-4 py-2 text-[11px] font-extrabold tracking-[0.12em] text-white uppercase transition-transform duration-200 hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-[0_2px_0_0_var(--ink)]"
+    >
+      Connect wallet
+    </button>
   );
 }
 
@@ -275,7 +373,18 @@ function Badge({
 }
 
 /** The community cards. */
-function Grid({ onPick }: { onPick: (c: Community) => void }) {
+function Grid({
+  onPick,
+  wallet,
+}: {
+  onPick: (c: Community) => void;
+  wallet: ClaimWallet;
+}) {
+  // `holds` is null when nothing is connected, or when the lookup could not be
+  // made. Both mean "we don't know", and an unknown must not dim a card — a
+  // real holder being told they hold nothing is the worst failure here.
+  const holds = wallet.address ? wallet.holds : null;
+
   return (
     <motion.ul
       className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"
@@ -291,16 +400,13 @@ function Grid({ onPick }: { onPick: (c: Community) => void }) {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, delay: Math.min(i * 0.03, 0.3) }}
         >
-          <button
-            type="button"
-            onClick={() => onPick(c)}
-            className="inked group w-full rounded-2xl bg-white p-3 text-left transition-transform duration-200 hover:-translate-y-1 active:translate-y-0.5 active:shadow-[0_2px_0_0_var(--ink)]"
-          >
-            <Badge community={c} className="aspect-square w-full text-3xl" />
-            <span className="mt-2.5 block text-center text-xs font-extrabold">
-              {c.name}
-            </span>
-          </button>
+          <CommunityCard
+            community={c}
+            onPick={onPick}
+            // Undefined while unknown, so the card stays neutral rather than
+            // claiming either way.
+            held={holds ? holds.includes(c.slug) : undefined}
+          />
         </motion.li>
       ))}
     </motion.ul>
