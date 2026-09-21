@@ -21,6 +21,10 @@ export type Entry = {
   joinedAt: string;
   xUserId?: string;
   quoteLink?: string;
+  /** Which door this entry came through: the X quests, or a holder claim. */
+  source?: string;
+  /** For a holder claim, the community whose snapshot matched. */
+  community?: string;
 };
 
 export type Submission = {
@@ -28,6 +32,9 @@ export type Submission = {
   wallet: string;
   xUserId: string;
   quoteLink: string;
+  /** "quests" or "claim". Defaults to the quest flow when absent. */
+  source?: string;
+  community?: string;
 };
 
 export type SubmitResult =
@@ -73,6 +80,8 @@ async function submitToLocalFile(sub: Submission): Promise<SubmitResult> {
     joinedAt: new Date().toISOString(),
     xUserId: sub.xUserId,
     quoteLink: sub.quoteLink,
+    source: sub.source ?? "quests",
+    community: sub.community,
   });
   await writeLocalEntries(entries);
 
@@ -109,8 +118,10 @@ async function submitToSheet(
   return { position: Number(data.position), inviteCode };
 }
 
-async function countSheetEntries(webAppUrl: string) {
-  const res = await fetch(webAppUrl, { method: "GET", cache: "no-store" });
+async function countSheetEntries(webAppUrl: string, source?: string) {
+  const url = new URL(webAppUrl);
+  if (source) url.searchParams.set("source", source);
+  const res = await fetch(url, { method: "GET", cache: "no-store" });
   if (!res.ok) throw new Error(`Sheets webhook returned ${res.status}`);
   const data = await res.json();
   return Number(data.count ?? 0);
@@ -126,4 +137,18 @@ export async function submitEntry(sub: Submission): Promise<SubmitResult> {
 export async function countEntries(): Promise<number> {
   const url = process.env.GOOGLE_SHEETS_WEBAPP_URL;
   return url ? countSheetEntries(url) : (await readLocalEntries()).length;
+}
+
+/**
+ * Claims only, for the claim portal's cap.
+ *
+ * The quest flow writes to the same sheet, so counting every row would spend
+ * the claim's allocation on people who never used it — with the quest list
+ * already underway, the cap would read as full on day one.
+ */
+export async function countClaims(): Promise<number> {
+  const url = process.env.GOOGLE_SHEETS_WEBAPP_URL;
+  if (url) return countSheetEntries(url, "claim");
+  const entries = await readLocalEntries();
+  return entries.filter((e) => e.source === "claim").length;
 }

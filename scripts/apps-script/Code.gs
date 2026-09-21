@@ -28,6 +28,8 @@ var HEADERS = [
   'Invite Code',
   'X User ID',
   'Quote Link',
+  'Source',
+  'Community',
 ];
 
 /**
@@ -42,8 +44,11 @@ var SHARED_SECRET = '';
 
 function doGet(e) {
   try {
-    // The site polls this for the "N already in" counter.
-    return json({ count: countEntries() });
+    // The site polls this for the "N already in" counter. `?source=claim`
+    // narrows it to one flow, which is how the claim portal's cap stays
+    // honest while both doors write to the same sheet.
+    var source = e && e.parameter ? e.parameter.source : null;
+    return json({ count: source ? countBySource(source) : countEntries() });
   } catch (err) {
     return json({ error: String(err) });
   }
@@ -71,6 +76,10 @@ function doPost(e) {
     var inviteCode = String(body.inviteCode || '').trim();
     var xUserId = String(body.xUserId || '').trim();
     var quoteLink = String(body.quoteLink || '').trim();
+    // Which door the entry came through, so the claim's cap can count only
+    // claims and the two flows stay tellable apart in the sheet.
+    var source = String(body.source || 'quests').trim();
+    var community = String(body.community || '').trim();
 
     if (!handle || !wallet || !inviteCode) {
       return json({ error: 'Missing handle, wallet or invite code.' });
@@ -115,6 +124,8 @@ function doPost(e) {
     row[HEADERS.indexOf('Invite Code')] = inviteCode;
     row[HEADERS.indexOf('X User ID')] = xUserId;
     row[HEADERS.indexOf('Quote Link')] = quoteLink;
+    row[HEADERS.indexOf('Source')] = source;
+    row[HEADERS.indexOf('Community')] = community;
     sheet.appendRow(row);
 
     // Position is 1-based and counts entries, not spreadsheet rows.
@@ -151,6 +162,27 @@ function countEntries() {
   // No tab yet means nobody has joined; don't create one just to count.
   if (!sheet) return 0;
   return Math.max(0, sheet.getLastRow() - 1);
+}
+
+/** Entries from one flow: 'claim' or 'quests'. */
+function countBySource(source) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(SHEET_NAME);
+  if (!sheet) return 0;
+
+  var rows = sheet.getLastRow() - 1;
+  if (rows < 1) return 0;
+
+  var col = HEADERS.indexOf('Source') + 1;
+  var values = sheet.getRange(2, col, rows, 1).getValues();
+
+  var n = 0;
+  for (var i = 0; i < values.length; i++) {
+    // Rows written before this column existed are quest entries.
+    var v = String(values[i][0] || 'quests').trim();
+    if (v === source) n++;
+  }
+  return n;
 }
 
 function json(obj) {

@@ -42,8 +42,15 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# allowlist submissions (local dev fallback)
-/data
+# allowlist submissions (local dev fallback). Excluded file by file rather
+# than as a whole directory, because git will not re-include anything inside a
+# directory it has already excluded — and the holder snapshots below have to
+# ship with the deploy.
+/data/*.json
+
+# The snapshots themselves are data the server must be able to read in
+# production, where the filesystem is read-only and nothing can be uploaded
+# after the fact, so they are committed.
 
 # source images, kept locally; the site uses the named copies in public/pfp
 /public/WhatsApp Image*
