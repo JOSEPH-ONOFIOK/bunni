@@ -23,7 +23,7 @@
  * can be checked against the repo without guessing from behaviour — the whole
  * reason the breakdown endpoint went unnoticed as missing for three rounds.
  */
-var SCRIPT_VERSION = 3;
+var SCRIPT_VERSION = 4;
 
 /** Tab the entries live on. Created on first write if missing. */
 var SHEET_NAME = 'Allowlist';
@@ -37,6 +37,22 @@ var SHEET_NAME = 'Allowlist';
  */
 var GTD_SHEET = 'GTD';
 var GTD_HEADERS = ['Wallet', 'Community'];
+
+/**
+ * Verified claims, on their own tab.
+ *
+ * Separate from Allowlist so the mint's snapshot is one clean export rather
+ * than a filter over two flows that happen to share a sheet. Allowlist still
+ * records every claim as well, which is what the 1,111 cap counts.
+ */
+var CLAIMED_SHEET = 'CLAIMED';
+var CLAIMED_HEADERS = [
+  'Claimed At',
+  'Wallet',
+  'Community',
+  'Invite Code',
+  'Position',
+];
 
 var HEADERS = [
   'Joined At',
@@ -170,7 +186,15 @@ function doPost(e) {
     sheet.appendRow(row);
 
     // Position is 1-based and counts entries, not spreadsheet rows.
-    return json({ position: sheet.getLastRow() - 1 });
+    var position = sheet.getLastRow() - 1;
+
+    // A verified claim is also written to its own tab, so the mint can export
+    // one list rather than filtering two flows apart.
+    if (source === 'claim') {
+      recordClaim(wallet, community, inviteCode, position);
+    }
+
+    return json({ position: position });
   } catch (err) {
     return json({ error: String(err) });
   } finally {
@@ -264,6 +288,38 @@ function gtdCommunitiesFor(wallet) {
     }
   }
   return out;
+}
+
+// --- CLAIMED: verified claims -----------------------------------------
+
+function getClaimedSheet() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(CLAIMED_SHEET);
+  if (!sheet) sheet = ss.insertSheet(CLAIMED_SHEET);
+
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(CLAIMED_HEADERS);
+    sheet.getRange(1, 1, 1, CLAIMED_HEADERS.length).setFontWeight('bold');
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+/** One verified claim. Never throws into the claim path: a spot that was
+    granted must not fail because a second write did. */
+function recordClaim(wallet, community, inviteCode, position) {
+  try {
+    var sheet = getClaimedSheet();
+    var row = [];
+    row[CLAIMED_HEADERS.indexOf('Claimed At')] = new Date().toISOString();
+    row[CLAIMED_HEADERS.indexOf('Wallet')] = wallet;
+    row[CLAIMED_HEADERS.indexOf('Community')] = community;
+    row[CLAIMED_HEADERS.indexOf('Invite Code')] = inviteCode;
+    row[CLAIMED_HEADERS.indexOf('Position')] = position;
+    sheet.appendRow(row);
+  } catch (err) {
+    // Swallowed deliberately — see above.
+  }
 }
 
 /**

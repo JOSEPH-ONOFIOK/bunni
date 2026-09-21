@@ -19,15 +19,12 @@ import {
   PER_COMMUNITY_ALLOCATION,
   type Community,
 } from "@/lib/communities";
-import { claimMessage } from "@/lib/claim-message";
 import {
   CLAIM_SHARE_TEXT,
   X_ACCOUNT,
   claimShareUrl,
   followUrl,
 } from "@/lib/quests";
-import { mobileDeepLinks, shortAddress, signMessage } from "@/lib/wallet";
-import { useClaimWallet, type ClaimWallet } from "./use-claim-wallet";
 
 type Status = "idle" | "checking" | "claimed" | "error";
 
@@ -79,15 +76,16 @@ const followStore = {
 };
 
 /**
- * The holder claim: pick your community, connect the wallet that holds it,
- * sign, and the spot is yours.
+ * The holder claim: pick your community, enter the wallet that holds it, and
+ * the spot is yours.
  *
- * The signature is the point. Eligibility is a fact we already hold, but a
- * typed address is only a claim about someone else's property — connecting and
- * signing is what makes it the claimant's own.
+ * The address is taken as typed. That is a deliberate trade for a flow with no
+ * popups: the GTD list is public, so an address can be copied and claimed by
+ * someone who doesn't hold it. What is still enforced is that the wallet is on
+ * the list, and that it can only be claimed once.
  */
 export function ClaimPortal() {
-  const wallet = useClaimWallet();
+  const [wallet, setWallet] = useState("");
   const [picked, setPicked] = useState<Community | null>(null);
 
   /**
@@ -154,8 +152,6 @@ export function ClaimPortal() {
     e.preventDefault();
     if (!picked || status === "checking") return;
 
-    // Guarded here as well as by the disabled button: a form can be submitted
-    // with the keyboard before the button's state is read.
     if (!followed) {
       setStatus("error");
       setMessage(`Follow @${X_ACCOUNT} first.`);
@@ -166,39 +162,10 @@ export function ClaimPortal() {
     setMessage("");
 
     try {
-      // 1. The wallet hands back an address it controls. A pasted address
-      //    would only ever be a claim about someone else's property. If one is
-      //    already connected from the header, reuse it rather than prompting
-      //    a second time.
-      const address = wallet.address ?? (await wallet.connect());
-      if (!address) {
-        setStatus("error");
-        setMessage(wallet.error ?? "No wallet account was shared.");
-        return;
-      }
-
-      // 2. A nonce from the server, so the signature cannot be replayed.
-      const nonceRes = await fetch("/api/claim/nonce", { cache: "no-store" });
-      const { nonce } = await nonceRes.json();
-
-      // 3. Sign. This moves no funds and costs no gas; it only proves the
-      //    wallet agreed to this exact claim.
-      const message = claimMessage({
-        wallet: address,
-        community: picked.name,
-        nonce,
-      });
-      const signature = await signMessage(message, address);
-
       const res = await fetch("/api/claim", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          community: picked.id,
-          wallet: address,
-          nonce,
-          signature,
-        }),
+        body: JSON.stringify({ community: picked.id, wallet: wallet.trim() }),
       });
       const data = await res.json();
 
@@ -227,16 +194,9 @@ export function ClaimPortal() {
         inviteCode: data.inviteCode,
       });
       setClaimed((c) => (c === null ? c : c + 1));
-    } catch (err) {
+    } catch {
       setStatus("error");
-      // A rejected signature or connection is the visitor changing their mind,
-      // not a failure — say so plainly rather than showing a stack of jargon.
-      const msg = err instanceof Error ? err.message : "";
-      setMessage(
-        /reject|denied|4001/i.test(msg)
-          ? "You cancelled that in your wallet."
-          : msg || "Couldn't reach your wallet. Try again in a sec.",
-      );
+      setMessage("Couldn't reach the server. Try again in a sec.");
     }
   }
 
@@ -249,15 +209,12 @@ export function ClaimPortal() {
         <Link href="/" className="wordmark text-2xl">
           BUNII
         </Link>
-        <div className="flex items-center gap-3">
-          <Link
-            href="/join"
-            className="hidden text-[11px] font-bold text-ink/50 underline underline-offset-2 hover:text-ink sm:inline"
-          >
-            No NFT? Join by quests
-          </Link>
-          <WalletButton wallet={wallet} />
-        </div>
+        <Link
+          href="/join"
+          className="text-[11px] font-bold text-ink/50 underline underline-offset-2 hover:text-ink"
+        >
+          No NFT? Join by quests
+        </Link>
       </nav>
 
       <header className="text-center">
@@ -282,7 +239,7 @@ export function ClaimPortal() {
 
         <p className="mx-auto mt-4 max-w-md text-[15px] leading-relaxed font-semibold text-ink/75">
           {CLAIM_CAP.toLocaleString()} spots across {COMMUNITIES.length}{" "}
-          communities. First come, first served. Pick your community, connect
+          communities. First come, first served. Pick your community, enter
           the wallet that holds it, and the spot is yours.
         </p>
 
@@ -323,14 +280,11 @@ export function ClaimPortal() {
               open={open}
               followed={followed}
               onFollowed={markFollowed}
+              wallet={wallet}
+              onWallet={setWallet}
             />
           ) : (
-            <Grid
-              key="grid"
-              onPick={setPicked}
-              wallet={wallet}
-              byCommunity={byCommunity}
-            />
+            <Grid key="grid" onPick={setPicked} byCommunity={byCommunity} />
           )}
         </AnimatePresence>
       </div>
@@ -447,80 +401,6 @@ function CommunityCard({
 }
 
 /**
- * Connect, and then show which address is connected. Connecting here is
- * optional — the claim will prompt if it has to — but doing it up front is
- * what lets the grid say which communities are actually claimable.
- */
-function WalletButton({ wallet }: { wallet: ClaimWallet }) {
-  const [showOpenIn, setShowOpenIn] = useState(false);
-
-  // No wallet in this browser — a phone's Safari or Chrome. Connecting cannot
-  // work here at all, so offer the way in rather than an error.
-  if (!wallet.address && !wallet.hasWallet) {
-    return (
-      <div className="relative">
-        <button
-          type="button"
-          onClick={() => setShowOpenIn((v) => !v)}
-          className="inked-sm rounded-full bg-teal px-4 py-2 text-[11px] font-extrabold tracking-[0.12em] text-white uppercase transition-transform duration-200 hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-[0_2px_0_0_var(--ink)]"
-        >
-          Open in wallet
-        </button>
-
-        {showOpenIn && (
-          <div className="inked absolute right-0 z-30 mt-2 w-56 rounded-2xl bg-white p-2">
-            <p className="px-2 py-1.5 text-[11px] leading-relaxed text-ink/60">
-              This browser has no wallet. Open the page inside one:
-            </p>
-            {mobileDeepLinks(
-              typeof window === "undefined" ? "" : window.location.href,
-            ).map((link) => (
-              <a
-                key={link.name}
-                href={link.url}
-                className="flex items-center justify-between rounded-xl px-2 py-2 text-xs font-extrabold hover:bg-ink/5"
-              >
-                {link.name}
-                <FiArrowUpRight className="h-3.5 w-3.5 text-ink/40" />
-              </a>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  if (wallet.address) {
-    return (
-      <button
-        type="button"
-        onClick={wallet.disconnect}
-        title="Forget this wallet"
-        className="inked-sm flex items-center gap-2 rounded-full bg-white px-3.5 py-2 font-mono text-[11px] font-bold text-ink transition-transform duration-200 hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-[0_2px_0_0_var(--ink)]"
-      >
-        <span
-          aria-hidden
-          className={`h-2 w-2 rounded-full ${
-            wallet.checking ? "bg-gold" : "bg-grass"
-          }`}
-        />
-        {shortAddress(wallet.address)}
-      </button>
-    );
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={() => void wallet.connect()}
-      className="inked-sm rounded-full bg-teal px-4 py-2 text-[11px] font-extrabold tracking-[0.12em] text-white uppercase transition-transform duration-200 hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-[0_2px_0_0_var(--ink)]"
-    >
-      Connect wallet
-    </button>
-  );
-}
-
-/**
  * A community's tile. Art is not in the repo yet, so this draws a monogram on
  * a colour derived from the name — stable per community, and a drop-in for the
  * real logo later.
@@ -575,18 +455,11 @@ function Badge({
 /** The community cards. */
 function Grid({
   onPick,
-  wallet,
   byCommunity,
 }: {
   onPick: (c: Community) => void;
-  wallet: ClaimWallet;
   byCommunity: Record<string, number> | null;
 }) {
-  // `holds` is null when nothing is connected, or when the lookup could not be
-  // made. Both mean "we don't know", and an unknown must not dim a card — a
-  // real holder being told they hold nothing is the worst failure here.
-  const holds = wallet.address ? wallet.holds : null;
-
   return (
     <motion.ul
       className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"
@@ -606,9 +479,6 @@ function Grid({
             community={c}
             onPick={onPick}
             claimed={byCommunity?.[c.slug] ?? (byCommunity ? 0 : null)}
-            // Undefined while unknown, so the card stays neutral rather than
-            // claiming either way.
-            held={holds ? holds.includes(c.slug) : undefined}
           />
         </motion.li>
       ))}
@@ -626,6 +496,8 @@ function WalletStep({
   open,
   followed,
   onFollowed,
+  wallet,
+  onWallet,
 }: {
   community: Community;
   onBack: () => void;
@@ -635,6 +507,8 @@ function WalletStep({
   open: boolean;
   followed: boolean;
   onFollowed: (next: boolean) => void;
+  wallet: string;
+  onWallet: (v: string) => void;
 }) {
   return (
     <motion.form
@@ -706,20 +580,40 @@ function WalletStep({
         </div>
       </div>
 
-      <ol className="mt-3 space-y-1.5 rounded-2xl border-2 border-dashed border-ink/15 bg-paper px-4 py-3">
-        <li className="flex gap-2 text-xs text-ink/70">
-          <span className="font-mono text-ink/40">2.</span>
-          Connect the wallet holding your {community.name}
-        </li>
-        <li className="flex gap-2 text-xs text-ink/70">
-          <span className="font-mono text-ink/40">3.</span>
-          Sign a message to prove it&rsquo;s yours
-        </li>
-      </ol>
+      <div
+        className={`mt-3 rounded-2xl border-2 p-4 ${
+          followed ? "border-ink/12 bg-white" : "border-ink/10 bg-ink/3 opacity-45"
+        }`}
+      >
+        <label
+          htmlFor="claim-wallet"
+          className="flex items-center gap-2 text-sm font-extrabold"
+        >
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 border-ink bg-white font-mono text-[10px] text-ink/50">
+            2
+          </span>
+          The wallet holding your {community.name}
+        </label>
+
+        <input
+          id="claim-wallet"
+          value={wallet}
+          onChange={(e) => onWallet(e.target.value)}
+          disabled={!followed}
+          placeholder="0x…"
+          autoComplete="off"
+          autoCapitalize="off"
+          spellCheck={false}
+          inputMode="text"
+          className="mt-3 w-full rounded-xl border-2 border-ink/15 bg-white px-3 py-2.5 font-mono text-xs outline-none placeholder:text-ink/25 focus:border-ink disabled:cursor-not-allowed"
+        />
+      </div>
 
       <button
         type="submit"
-        disabled={!open || !followed || status === "checking"}
+        disabled={
+          !open || !followed || !wallet.trim() || status === "checking"
+        }
         className="inked mt-5 flex w-full items-center justify-center gap-2 rounded-full bg-gold px-6 py-4 text-xs font-extrabold tracking-[0.16em] text-ink uppercase transition-transform duration-200 enabled:hover:-translate-y-0.5 enabled:active:translate-y-1 enabled:active:shadow-[0_2px_0_0_var(--ink)] disabled:cursor-not-allowed disabled:opacity-45"
       >
         {!open ? (
@@ -732,10 +626,10 @@ function WalletStep({
         ) : status === "checking" ? (
           <>
             <FiLoader className="h-3.5 w-3.5 animate-spin" />
-            Check your wallet…
+            Checking…
           </>
         ) : (
-          "Connect wallet & claim"
+          "Claim my spot"
         )}
       </button>
 
@@ -753,7 +647,7 @@ function WalletStep({
       </AnimatePresence>
 
       <p className="mt-3 text-center text-[11px] text-ink/45">
-        Holders only. Signing is free — it moves no funds and costs no gas.
+        Holders only. Nothing is signed and no wallet is connected.
       </p>
     </motion.form>
   );

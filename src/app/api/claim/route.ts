@@ -2,13 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { CLAIM_CAP, communityById } from "@/lib/communities";
 import { countClaims, submitEntry, type Submission } from "@/lib/allowlist-store";
 import { communitiesFor, isHolder } from "@/lib/snapshots";
-import { claimMessage, nonceValid } from "@/lib/claim-nonce";
-import { verifyMessage } from "viem";
 
 /**
- * The holder claim. Unlike the quest flow there is no login: eligibility is a
- * wallet's presence in a community snapshot, which is a fact we already hold,
- * so there is nothing for a visitor to prove interactively.
+ * The holder claim.
+ *
+ * Eligibility is a wallet's presence in a community snapshot, and the address
+ * is taken as typed. That is a deliberate trade: the GTD list is public, so an
+ * address can be copied and claimed by someone who doesn't hold it. A wallet
+ * signature would close that, at the cost of a popup this flow is meant to
+ * avoid. What remains enforced is that the wallet is on the list, and that a
+ * wallet can only be claimed once.
  *
  * The cap is enforced here rather than in the page, because the page's counter
  * is a snapshot in time and two people can always race the last spot.
@@ -74,47 +77,8 @@ export async function POST(req: NextRequest) {
   const wallet = String(body.wallet ?? "").trim();
   if (!ETH_ADDRESS_RE.test(wallet)) {
     return NextResponse.json(
-      { error: "Connect a wallet first." },
+      { error: "Enter a valid wallet address (0x…)." },
       { status: 400 },
-    );
-  }
-
-  // --- prove the claimant controls the wallet --------------------------
-  //
-  // Without this the address is just text, and anyone could paste a known
-  // holder's wallet and take their spot. The signature is over a nonce this
-  // server issued, so a signature captured elsewhere cannot be replayed here.
-  const nonce = String(body.nonce ?? "");
-  if (!nonceValid(nonce)) {
-    return NextResponse.json(
-      { error: "That signing request expired. Try again." },
-      { status: 400 },
-    );
-  }
-
-  const signature = String(body.signature ?? "");
-  if (!/^0x[0-9a-fA-F]+$/.test(signature)) {
-    return NextResponse.json(
-      { error: "Sign the message to claim." },
-      { status: 400 },
-    );
-  }
-
-  let signerOk = false;
-  try {
-    signerOk = await verifyMessage({
-      address: wallet as `0x${string}`,
-      message: claimMessage({ wallet, community: community.name, nonce }),
-      signature: signature as `0x${string}`,
-    });
-  } catch {
-    signerOk = false;
-  }
-
-  if (!signerOk) {
-    return NextResponse.json(
-      { error: "That signature doesn't match the wallet." },
-      { status: 401 },
     );
   }
 
