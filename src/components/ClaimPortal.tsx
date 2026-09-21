@@ -264,7 +264,17 @@ export function ClaimPortal() {
       <div className="mt-10">
         <AnimatePresence mode="wait">
           {status === "claimed" && result ? (
-            <Claimed key="done" result={result} />
+            <Claimed
+              key="done"
+              result={result}
+              onBack={() => {
+                setPicked(null);
+                setWallet("");
+                setStatus("idle");
+                setMessage("");
+                setResult(null);
+              }}
+            />
           ) : picked ? (
             <WalletStep
               key="wallet"
@@ -519,10 +529,13 @@ function WalletStep({
       exit={{ opacity: 0, y: -10 }}
       transition={{ duration: 0.4, ease: EASE }}
     >
+      {/* A real button rather than faint caption text: this is the only way
+          back out of a community, and on a phone it also has to be big enough
+          to hit. */}
       <button
         type="button"
         onClick={onBack}
-        className="inline-flex items-center gap-1 text-[11px] font-bold text-ink/50 hover:text-ink"
+        className="inked-sm inline-flex items-center gap-1.5 rounded-full bg-white px-3.5 py-2 text-[11px] font-extrabold text-ink transition-transform duration-200 hover:-translate-y-0.5 active:translate-y-0.5 active:shadow-[0_2px_0_0_var(--ink)]"
       >
         <FiChevronLeft className="h-3.5 w-3.5" />
         All communities
@@ -656,8 +669,10 @@ function WalletStep({
 /** The spot is yours. */
 function Claimed({
   result,
+  onBack,
 }: {
   result: { community: string; position: number; inviteCode: string };
+  onBack: () => void;
 }) {
   return (
     <motion.div
@@ -698,6 +713,17 @@ function Claimed({
       <p className="mt-3 rounded-2xl border-2 border-dashed border-ink/15 bg-paper px-4 py-2.5 text-xs leading-relaxed text-ink/60">
         &ldquo;{CLAIM_SHARE_TEXT}&rdquo;
       </p>
+
+      {/* Claiming used to be a dead end. Holding more than one collection is
+          common, so the way back to the grid has to be here. */}
+      <button
+        type="button"
+        onClick={onBack}
+        className="mt-5 inline-flex items-center gap-1.5 text-[11px] font-bold text-ink/50 hover:text-ink"
+      >
+        <FiChevronLeft className="h-3.5 w-3.5" />
+        Claim for another community
+      </button>
     </motion.div>
   );
 }
