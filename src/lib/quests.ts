@@ -131,6 +131,20 @@ export const quoteIntentUrl = (postId?: string) =>
     postId ? `&url=${encodeURIComponent(pinnedPostUrl(postId))}` : ""
   }`;
 
+/**
+ * What someone posts after claiming, and the link that opens X with it ready
+ * to send.
+ *
+ * Offered the moment the spot is theirs, because that is when they are most
+ * willing to say so — a share asked for later is a share that doesn't happen.
+ */
+export const CLAIM_SHARE_TEXT = `I just claimed my Bunii GTD free mint @${X_ACCOUNT}`;
+
+export const claimShareUrl = (siteUrl?: string) =>
+  `https://x.com/intent/post?text=${encodeURIComponent(CLAIM_SHARE_TEXT)}${
+    siteUrl ? `&url=${encodeURIComponent(siteUrl)}` : ""
+  }`;
+
 export function questLinkFor(id: QuestId, postId?: string) {
   if (id === "follow") return followUrl();
   if (id === "quote") return quoteIntentUrl(postId);

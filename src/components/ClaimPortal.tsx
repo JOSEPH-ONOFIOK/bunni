@@ -11,6 +11,7 @@ import {
   FiLoader,
   FiLock,
 } from "react-icons/fi";
+import { FaXTwitter } from "react-icons/fa6";
 import {
   COMMUNITIES,
   CLAIM_CAP,
@@ -19,7 +20,12 @@ import {
   type Community,
 } from "@/lib/communities";
 import { claimMessage } from "@/lib/claim-message";
-import { X_ACCOUNT, followUrl } from "@/lib/quests";
+import {
+  CLAIM_SHARE_TEXT,
+  X_ACCOUNT,
+  claimShareUrl,
+  followUrl,
+} from "@/lib/quests";
 import { mobileDeepLinks, shortAddress, signMessage } from "@/lib/wallet";
 import { useClaimWallet, type ClaimWallet } from "./use-claim-wallet";
 
@@ -779,6 +785,24 @@ function Claimed({
 
       <p className="mt-5 rounded-2xl border-2 border-dashed border-ink/20 bg-paper px-4 py-3 font-mono text-lg font-bold tracking-widest">
         {result.inviteCode}
+      </p>
+
+      {/* Asked for now, while the spot is freshly theirs — a share requested
+          later is a share that doesn't happen. */}
+      <a
+        href={claimShareUrl(
+          typeof window === "undefined" ? undefined : window.location.origin + "/claim",
+        )}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inked mt-6 flex w-full items-center justify-center gap-2 rounded-full bg-ink px-6 py-4 text-xs font-extrabold tracking-[0.16em] text-white uppercase transition-transform duration-200 hover:-translate-y-0.5 active:translate-y-1 active:shadow-[0_2px_0_0_var(--ink)]"
+      >
+        <FaXTwitter className="h-4 w-4" />
+        Post it
+      </a>
+
+      <p className="mt-3 rounded-2xl border-2 border-dashed border-ink/15 bg-paper px-4 py-2.5 text-xs leading-relaxed text-ink/60">
+        &ldquo;{CLAIM_SHARE_TEXT}&rdquo;
       </p>
     </motion.div>
   );
