@@ -4,26 +4,30 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { FiCheck, FiChevronLeft } from "react-icons/fi";
+import { FiCheck, FiChevronLeft, FiLoader } from "react-icons/fi";
 import {
   COMMUNITIES,
   CLAIM_CAP,
   HAS_LOGO,
   type Community,
 } from "@/lib/communities";
+import { claimMessage } from "@/lib/claim-message";
+import { connect, signMessage } from "@/lib/wallet";
 
 type Status = "idle" | "checking" | "claimed" | "error";
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 
 /**
- * The holder claim: pick your community, paste your wallet, and if the
- * snapshot has you, the spot is yours. No login — eligibility is a fact we
- * already hold, so there is nothing for a visitor to prove interactively.
+ * The holder claim: pick your community, connect the wallet that holds it,
+ * sign, and the spot is yours.
+ *
+ * The signature is the point. Eligibility is a fact we already hold, but a
+ * typed address is only a claim about someone else's property — connecting and
+ * signing is what makes it the claimant's own.
  */
 export function ClaimPortal() {
   const [picked, setPicked] = useState<Community | null>(null);
-  const [wallet, setWallet] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [message, setMessage] = useState("");
   const [result, setResult] = useState<{
@@ -58,10 +62,37 @@ export function ClaimPortal() {
     setMessage("");
 
     try {
+      // 1. The wallet hands back an address it controls. A pasted address
+      //    would only ever be a claim about someone else's property.
+      const [address] = await connect();
+      if (!address) {
+        setStatus("error");
+        setMessage("No wallet account was shared.");
+        return;
+      }
+
+      // 2. A nonce from the server, so the signature cannot be replayed.
+      const nonceRes = await fetch("/api/claim/nonce", { cache: "no-store" });
+      const { nonce } = await nonceRes.json();
+
+      // 3. Sign. This moves no funds and costs no gas; it only proves the
+      //    wallet agreed to this exact claim.
+      const message = claimMessage({
+        wallet: address,
+        community: picked.name,
+        nonce,
+      });
+      const signature = await signMessage(message, address);
+
       const res = await fetch("/api/claim", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ community: picked.id, wallet }),
+        body: JSON.stringify({
+          community: picked.id,
+          wallet: address,
+          nonce,
+          signature,
+        }),
       });
       const data = await res.json();
 
@@ -90,9 +121,16 @@ export function ClaimPortal() {
         inviteCode: data.inviteCode,
       });
       setClaimed((c) => (c === null ? c : c + 1));
-    } catch {
+    } catch (err) {
       setStatus("error");
-      setMessage("Couldn't reach the server. Try again in a sec.");
+      // A rejected signature or connection is the visitor changing their mind,
+      // not a failure — say so plainly rather than showing a stack of jargon.
+      const msg = err instanceof Error ? err.message : "";
+      setMessage(
+        /reject|denied|4001/i.test(msg)
+          ? "You cancelled that in your wallet."
+          : msg || "Couldn't reach your wallet. Try again in a sec.",
+      );
     }
   }
 
@@ -135,8 +173,8 @@ export function ClaimPortal() {
 
         <p className="mx-auto mt-4 max-w-md text-[15px] leading-relaxed font-semibold text-ink/75">
           {CLAIM_CAP.toLocaleString()} spots across {COMMUNITIES.length} Furnace
-          communities. First come, first served, no login. Pick your community,
-          paste your wallet, and if you&rsquo;re on the list it&rsquo;s yours.
+          communities. First come, first served. Pick your community, connect
+          the wallet that holds it, and the spot is yours.
         </p>
 
         {/* The cap made concrete: a bar fills as spots go. */}
@@ -165,8 +203,6 @@ export function ClaimPortal() {
             <WalletStep
               key="wallet"
               community={picked}
-              wallet={wallet}
-              onWallet={setWallet}
               onBack={() => {
                 setPicked(null);
                 setStatus("idle");
@@ -274,8 +310,6 @@ function Grid({ onPick }: { onPick: (c: Community) => void }) {
 /** Paste a wallet for the chosen community. */
 function WalletStep({
   community,
-  wallet,
-  onWallet,
   onBack,
   onSubmit,
   status,
@@ -283,8 +317,6 @@ function WalletStep({
   open,
 }: {
   community: Community;
-  wallet: string;
-  onWallet: (v: string) => void;
   onBack: () => void;
   onSubmit: (e: React.FormEvent) => void;
   status: Status;
@@ -319,32 +351,34 @@ function WalletStep({
         </span>
       </div>
 
-      <label
-        htmlFor="claim-wallet"
-        className="mt-6 block font-mono text-[10px] tracking-[0.2em] text-ink/45 uppercase"
-      >
-        Your wallet
-      </label>
-      <input
-        id="claim-wallet"
-        value={wallet}
-        onChange={(e) => onWallet(e.target.value)}
-        placeholder="0x…"
-        autoComplete="off"
-        spellCheck={false}
-        className="mt-1.5 w-full rounded-2xl border-2 border-ink/15 bg-white px-4 py-3 font-mono text-sm outline-none placeholder:text-ink/25 focus:border-ink"
-      />
+      {/* Two steps, stated before they happen: people abandon a wallet popup
+          they weren't expecting. */}
+      <ol className="mt-6 space-y-1.5 rounded-2xl border-2 border-dashed border-ink/15 bg-paper px-4 py-3">
+        <li className="flex gap-2 text-xs text-ink/70">
+          <span className="font-mono text-ink/40">1.</span>
+          Connect the wallet holding your {community.name}
+        </li>
+        <li className="flex gap-2 text-xs text-ink/70">
+          <span className="font-mono text-ink/40">2.</span>
+          Sign a message to prove it&rsquo;s yours
+        </li>
+      </ol>
 
       <button
         type="submit"
         disabled={!open || status === "checking"}
-        className="inked mt-5 w-full rounded-full bg-gold px-6 py-4 text-xs font-extrabold tracking-[0.16em] text-ink uppercase transition-transform duration-200 enabled:hover:-translate-y-0.5 enabled:active:translate-y-1 enabled:active:shadow-[0_2px_0_0_var(--ink)] disabled:cursor-not-allowed disabled:opacity-45"
+        className="inked mt-5 flex w-full items-center justify-center gap-2 rounded-full bg-gold px-6 py-4 text-xs font-extrabold tracking-[0.16em] text-ink uppercase transition-transform duration-200 enabled:hover:-translate-y-0.5 enabled:active:translate-y-1 enabled:active:shadow-[0_2px_0_0_var(--ink)] disabled:cursor-not-allowed disabled:opacity-45"
       >
-        {!open
-          ? "Every spot is claimed"
-          : status === "checking"
-            ? "Checking…"
-            : "Claim my spot"}
+        {!open ? (
+          "Every spot is claimed"
+        ) : status === "checking" ? (
+          <>
+            <FiLoader className="h-3.5 w-3.5 animate-spin" />
+            Check your wallet…
+          </>
+        ) : (
+          "Connect wallet & claim"
+        )}
       </button>
 
       <AnimatePresence>
@@ -361,7 +395,7 @@ function WalletStep({
       </AnimatePresence>
 
       <p className="mt-3 text-center text-[11px] text-ink/45">
-        Holders only. Nothing is signed and no wallet is connected.
+        Holders only. Signing is free — it moves no funds and costs no gas.
       </p>
     </motion.form>
   );

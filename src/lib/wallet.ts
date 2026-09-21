@@ -166,3 +166,30 @@ export async function readBalance(
 }
 
 export const shortAddress = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+
+/**
+ * Asks the wallet to sign a plain message — personal_sign, which every
+ * injected wallet supports and which shows the text to the signer rather than
+ * a blob of hex they cannot read.
+ *
+ * No transaction, no gas, no approval: the signature only proves the account
+ * agreed to this exact text.
+ */
+export async function signMessage(
+  message: string,
+  address: string,
+  target?: Eip1193Provider,
+): Promise<string> {
+  const provider = target ?? getProvider();
+  if (!provider) throw new Error("No wallet found.");
+
+  const signature = await provider.request({
+    method: "personal_sign",
+    // personal_sign takes the message first and the account second — the
+    // reverse of eth_sign, and getting it the wrong way round fails with an
+    // error that blames the address.
+    params: [message, address],
+  });
+
+  return String(signature);
+}

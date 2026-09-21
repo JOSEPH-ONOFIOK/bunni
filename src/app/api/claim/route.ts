@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { CLAIM_CAP, communityById } from "@/lib/communities";
 import { countClaims, submitEntry, type Submission } from "@/lib/allowlist-store";
 import { communitiesFor, isHolder } from "@/lib/snapshots";
+import { claimMessage, nonceValid } from "@/lib/claim-nonce";
+import { verifyMessage } from "viem";
 
 /**
  * The holder claim. Unlike the quest flow there is no login: eligibility is a
@@ -72,8 +74,47 @@ export async function POST(req: NextRequest) {
   const wallet = String(body.wallet ?? "").trim();
   if (!ETH_ADDRESS_RE.test(wallet)) {
     return NextResponse.json(
-      { error: "Enter a valid EVM wallet address (0x...)." },
+      { error: "Connect a wallet first." },
       { status: 400 },
+    );
+  }
+
+  // --- prove the claimant controls the wallet --------------------------
+  //
+  // Without this the address is just text, and anyone could paste a known
+  // holder's wallet and take their spot. The signature is over a nonce this
+  // server issued, so a signature captured elsewhere cannot be replayed here.
+  const nonce = String(body.nonce ?? "");
+  if (!nonceValid(nonce)) {
+    return NextResponse.json(
+      { error: "That signing request expired. Try again." },
+      { status: 400 },
+    );
+  }
+
+  const signature = String(body.signature ?? "");
+  if (!/^0x[0-9a-fA-F]+$/.test(signature)) {
+    return NextResponse.json(
+      { error: "Sign the message to claim." },
+      { status: 400 },
+    );
+  }
+
+  let signerOk = false;
+  try {
+    signerOk = await verifyMessage({
+      address: wallet as `0x${string}`,
+      message: claimMessage({ wallet, community: community.name, nonce }),
+      signature: signature as `0x${string}`,
+    });
+  } catch {
+    signerOk = false;
+  }
+
+  if (!signerOk) {
+    return NextResponse.json(
+      { error: "That signature doesn't match the wallet." },
+      { status: 401 },
     );
   }
 
