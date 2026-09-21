@@ -59,17 +59,8 @@ export function communityById(id: string): Community | undefined {
 }
 
 /**
- * Communities whose logo is in public/communities. Listed rather than probed,
- * because a missing file would otherwise render as a broken image — and the
- * monogram fallback is a better empty state than that.
+ * Every community now has artwork in public/communities, so the monogram
+ * fallback in the portal is dead weight — kept only so a community added
+ * without a logo still renders rather than showing a broken image.
  */
-export const HAS_LOGO = new Set([
-  "blokyz",
-  "bull-runners",
-  "cash-cats",
-  "h00dle",
-  "internet-monkes",
-  "onchainhoodies",
-  "script-kiddies",
-  "wif-outlaws",
-]);
+export const HAS_LOGO = new Set(COMMUNITIES.map((c) => c.slug));
