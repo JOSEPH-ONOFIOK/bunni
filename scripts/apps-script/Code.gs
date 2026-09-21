@@ -66,6 +66,12 @@ function doGet(e) {
       return json({ communities: gtdCommunitiesFor(p.wallet) });
     }
 
+    // ?breakdown=claim reports how many claims each community has taken, so
+    // the portal can show a ring per card rather than one bar for the lot.
+    if (p.breakdown) {
+      return json({ byCommunity: countByCommunity(p.breakdown) });
+    }
+
     return json({ count: p.source ? countBySource(p.source) : countEntries() });
   } catch (err) {
     return json({ error: String(err) });
@@ -244,6 +250,40 @@ function gtdCommunitiesFor(wallet) {
     if (String(values[i][0]).trim().toLowerCase() === needle) {
       out.push(String(values[i][1]).trim());
     }
+  }
+  return out;
+}
+
+/**
+ * Claims per community, as { slug: n }.
+ *
+ * One pass over two columns rather than a query per community: sixteen
+ * separate scans of the same sheet is the shape that makes Apps Script slow
+ * enough to time the page out.
+ */
+function countByCommunity(source) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(SHEET_NAME);
+  if (!sheet) return {};
+
+  var rows = sheet.getLastRow() - 1;
+  if (rows < 1) return {};
+
+  var sourceCol = HEADERS.indexOf('Source') + 1;
+  var commCol = HEADERS.indexOf('Community') + 1;
+  var first = Math.min(sourceCol, commCol);
+  var width = Math.abs(commCol - sourceCol) + 1;
+
+  var values = sheet.getRange(2, first, rows, width).getValues();
+  var sourceAt = sourceCol - first;
+  var commAt = commCol - first;
+
+  var out = {};
+  for (var i = 0; i < values.length; i++) {
+    if (String(values[i][sourceAt] || 'quests').trim() !== source) continue;
+    var slug = String(values[i][commAt] || '').trim();
+    if (!slug) continue;
+    out[slug] = (out[slug] || 0) + 1;
   }
   return out;
 }

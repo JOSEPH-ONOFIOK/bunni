@@ -2,7 +2,8 @@
  * The Furnace on Robinhood — the communities whose holders can claim a spot.
  *
  * Normies and NPC are deliberately absent: the Furnace lineup has sixteen, this
- * claim is open to fourteen of them.
+ * claim is open to sixteen: the Furnace lineup less Normies and NPC, plus
+ * Stonk Interns and Clickihood.
  */
 
 export type Community = {
@@ -49,10 +50,25 @@ export const COMMUNITIES: Community[] = [
     contract: "0x9ec6c5b9f572a9b02138e553bc5f5882da735f45", chain: "robinhood" },
   { id: "h00dle", slug: "h00dle", name: "H00dle",
     contract: "0x14924807ff03f410f0965a25d66bf44e1e926841", chain: "robinhood" },
+  { id: "stonk-interns", slug: "stonk-interns", name: "Stonk Interns",
+    contract: "0xfc4b0c4f464dc3037cf013934648a8a726d565a5", chain: "robinhood" },
+  { id: "clickihood", slug: "clickihood", name: "Clickihood",
+    contract: "0x985607672ffee71316d3ebf2c71c8381435f156e", chain: "robinhood" },
 ];
 
 /** Total spots on offer, shared across every community. */
 export const CLAIM_CAP = 1111;
+
+/**
+ * Each community's share of the cap, as a percentage denominator for its ring.
+ *
+ * The spots themselves are not reserved — the claim is first come, first
+ * served against the single 1,111 — so this is what "how far has this
+ * community got" is measured against, not a quota that stops anyone.
+ */
+export const PER_COMMUNITY_ALLOCATION = Math.ceil(
+  CLAIM_CAP / COMMUNITIES.length,
+);
 
 export function communityById(id: string): Community | undefined {
   return COMMUNITIES.find((c) => c.id === id);

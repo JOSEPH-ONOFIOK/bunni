@@ -14,6 +14,7 @@ import {
   COMMUNITIES,
   CLAIM_CAP,
   HAS_LOGO,
+  PER_COMMUNITY_ALLOCATION,
   type Community,
 } from "@/lib/communities";
 import { claimMessage } from "@/lib/claim-message";
@@ -46,8 +47,15 @@ export function ClaimPortal() {
   const [claimed, setClaimed] = useState<number | null>(null);
   const [open, setOpen] = useState(true);
 
+  /** Claims taken per community, or null while unknown. */
+  const [byCommunity, setByCommunity] = useState<Record<
+    string,
+    number
+  > | null>(null);
+
   useEffect(() => {
     let cancelled = false;
+
     fetch("/api/claim")
       .then((r) => r.json())
       .then((d) => {
@@ -56,6 +64,16 @@ export function ClaimPortal() {
         if (typeof d.open === "boolean") setOpen(d.open);
       })
       .catch(() => {});
+
+    // Separate request: the rings are a nice-to-have, and a slow breakdown
+    // should not hold up the headline counter.
+    fetch("/api/claim/breakdown")
+      .then((r) => r.json())
+      .then((d) => {
+        if (!cancelled && d.byCommunity) setByCommunity(d.byCommunity);
+      })
+      .catch(() => {});
+
     return () => {
       cancelled = true;
     };
@@ -226,11 +244,70 @@ export function ClaimPortal() {
               open={open}
             />
           ) : (
-            <Grid key="grid" onPick={setPicked} wallet={wallet} />
+            <Grid
+              key="grid"
+              onPick={setPicked}
+              wallet={wallet}
+              byCommunity={byCommunity}
+            />
           )}
         </AnimatePresence>
       </div>
     </div>
+  );
+}
+
+/**
+ * How far this community has got, as a ring.
+ *
+ * `strokeDasharray` on a circle is the whole trick: the circumference is
+ * known, so a dash of `pct% of it` followed by a gap draws exactly that
+ * fraction. Rotated so it fills from twelve o'clock rather than three.
+ */
+function ClaimRing({ claimed }: { claimed: number | null }) {
+  // Unknown stays blank rather than drawing an empty ring, which would read as
+  // "nobody has claimed" — a different and wrong claim.
+  if (claimed === null) {
+    return <span className="mt-1.5 block h-[18px]" aria-hidden />;
+  }
+
+  const pct = Math.min(100, (claimed / PER_COMMUNITY_ALLOCATION) * 100);
+  const R = 7;
+  const CIRCUMFERENCE = 2 * Math.PI * R;
+
+  return (
+    <span
+      className="mt-1.5 flex items-center justify-center gap-1.5"
+      title={`${claimed} of ${PER_COMMUNITY_ALLOCATION} claimed`}
+    >
+      <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
+        <circle
+          cx="9"
+          cy="9"
+          r={R}
+          fill="none"
+          stroke="var(--ink)"
+          strokeOpacity="0.12"
+          strokeWidth="3"
+        />
+        <circle
+          cx="9"
+          cy="9"
+          r={R}
+          fill="none"
+          stroke={pct >= 100 ? "var(--lava)" : "var(--grass)"}
+          strokeWidth="3"
+          strokeLinecap="round"
+          strokeDasharray={`${(pct / 100) * CIRCUMFERENCE} ${CIRCUMFERENCE}`}
+          transform="rotate(-90 9 9)"
+          style={{ transition: "stroke-dasharray 0.6s ease" }}
+        />
+      </svg>
+
+      <span className="font-mono text-[9px] font-bold text-ink/45">
+        {Math.round(pct)}%
+      </span>
+    </span>
   );
 }
 
@@ -239,10 +316,12 @@ function CommunityCard({
   community,
   onPick,
   held,
+  claimed,
 }: {
   community: Community;
   onPick: (c: Community) => void;
   held?: boolean;
+  claimed: number | null;
 }) {
   // Only dim on a definite "no". Unknown stays fully clickable: someone whose
   // lookup failed can still try, and the claim itself is the real check.
@@ -262,6 +341,8 @@ function CommunityCard({
       <span className="mt-2.5 block text-center text-xs font-extrabold">
         {community.name}
       </span>
+
+      <ClaimRing claimed={claimed} />
 
       {held === true && (
         <span
@@ -376,9 +457,11 @@ function Badge({
 function Grid({
   onPick,
   wallet,
+  byCommunity,
 }: {
   onPick: (c: Community) => void;
   wallet: ClaimWallet;
+  byCommunity: Record<string, number> | null;
 }) {
   // `holds` is null when nothing is connected, or when the lookup could not be
   // made. Both mean "we don't know", and an unknown must not dim a card — a
@@ -403,6 +486,7 @@ function Grid({
           <CommunityCard
             community={c}
             onPick={onPick}
+            claimed={byCommunity?.[c.slug] ?? (byCommunity ? 0 : null)}
             // Undefined while unknown, so the card stays neutral rather than
             // claiming either way.
             held={holds ? holds.includes(c.slug) : undefined}

@@ -146,6 +146,28 @@ export async function countEntries(): Promise<number> {
  * the claim's allocation on people who never used it — with the quest list
  * already underway, the cap would read as full on day one.
  */
+/** Claims per community slug, for the portal's per-card rings. */
+export async function claimsByCommunity(): Promise<Record<string, number>> {
+  const url = process.env.GOOGLE_SHEETS_WEBAPP_URL;
+
+  if (url) {
+    const target = new URL(url);
+    target.searchParams.set("breakdown", "claim");
+    const res = await fetch(target, { cache: "no-store" });
+    if (!res.ok) throw new Error(`Sheets webhook returned ${res.status}`);
+    const data = await res.json();
+    return data.byCommunity ?? {};
+  }
+
+  const entries = await readLocalEntries();
+  const out: Record<string, number> = {};
+  for (const e of entries) {
+    if (e.source !== "claim" || !e.community) continue;
+    out[e.community] = (out[e.community] ?? 0) + 1;
+  }
+  return out;
+}
+
 export async function countClaims(): Promise<number> {
   const url = process.env.GOOGLE_SHEETS_WEBAPP_URL;
   if (url) return countSheetEntries(url, "claim");
