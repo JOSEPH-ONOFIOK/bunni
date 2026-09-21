@@ -2,9 +2,10 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  FiArrowUpRight,
   FiCheck,
   FiChevronLeft,
   FiLoader,
@@ -18,12 +19,58 @@ import {
   type Community,
 } from "@/lib/communities";
 import { claimMessage } from "@/lib/claim-message";
+import { X_ACCOUNT, followUrl } from "@/lib/quests";
 import { shortAddress, signMessage } from "@/lib/wallet";
 import { useClaimWallet, type ClaimWallet } from "./use-claim-wallet";
 
 type Status = "idle" | "checking" | "claimed" | "error";
 
 const EASE = [0.16, 1, 0.3, 1] as const;
+
+/**
+ * The follow attestation, as an external store.
+ *
+ * localStorage is an external system, so reading it through
+ * `useSyncExternalStore` — rather than hydrating in an effect — keeps the
+ * server render and the first client paint in agreement, and avoids the
+ * cascading re-render an effect would cause.
+ */
+const FOLLOW_KEY = "bunii.claim.followed.v1";
+
+const followStore = {
+  listeners: new Set<() => void>(),
+
+  subscribe(onChange: () => void) {
+    followStore.listeners.add(onChange);
+    // Keeps a second tab in step if the site is open twice.
+    window.addEventListener("storage", onChange);
+    return () => {
+      followStore.listeners.delete(onChange);
+      window.removeEventListener("storage", onChange);
+    };
+  },
+
+  get(): boolean {
+    try {
+      return localStorage.getItem(FOLLOW_KEY) === "1";
+    } catch {
+      return false;
+    }
+  },
+
+  /** Nothing is followed as far as the server knows. */
+  getServer(): boolean {
+    return false;
+  },
+
+  set(next: boolean) {
+    try {
+      if (next) localStorage.setItem(FOLLOW_KEY, "1");
+      else localStorage.removeItem(FOLLOW_KEY);
+    } catch {}
+    for (const listener of followStore.listeners) listener();
+  },
+};
 
 /**
  * The holder claim: pick your community, connect the wallet that holds it,
@@ -36,6 +83,24 @@ const EASE = [0.16, 1, 0.3, 1] as const;
 export function ClaimPortal() {
   const wallet = useClaimWallet();
   const [picked, setPicked] = useState<Community | null>(null);
+
+  /**
+   * Whether they've said they follow.
+   *
+   * Following opens X in another tab, so this has to survive leaving the page
+   * and coming back — otherwise the tick they just made is gone when they
+   * return. Read through the store below rather than an effect, so the server
+   * render and the first client paint agree.
+   *
+   * X's free tier cannot read follows, so this is an attestation, the same as
+   * the follow step in the quest flow.
+   */
+  const followed = useSyncExternalStore(
+    followStore.subscribe,
+    followStore.get,
+    followStore.getServer,
+  );
+  const markFollowed = followStore.set;
   const [status, setStatus] = useState<Status>("idle");
   const [message, setMessage] = useState("");
   const [result, setResult] = useState<{
@@ -82,6 +147,14 @@ export function ClaimPortal() {
   async function claim(e: React.FormEvent) {
     e.preventDefault();
     if (!picked || status === "checking") return;
+
+    // Guarded here as well as by the disabled button: a form can be submitted
+    // with the keyboard before the button's state is read.
+    if (!followed) {
+      setStatus("error");
+      setMessage(`Follow @${X_ACCOUNT} first.`);
+      return;
+    }
 
     setStatus("checking");
     setMessage("");
@@ -242,6 +315,8 @@ export function ClaimPortal() {
               status={status}
               message={message}
               open={open}
+              followed={followed}
+              onFollowed={markFollowed}
             />
           ) : (
             <Grid
@@ -505,6 +580,8 @@ function WalletStep({
   status,
   message,
   open,
+  followed,
+  onFollowed,
 }: {
   community: Community;
   onBack: () => void;
@@ -512,6 +589,8 @@ function WalletStep({
   status: Status;
   message: string;
   open: boolean;
+  followed: boolean;
+  onFollowed: (next: boolean) => void;
 }) {
   return (
     <motion.form
@@ -541,26 +620,71 @@ function WalletStep({
         </span>
       </div>
 
-      {/* Two steps, stated before they happen: people abandon a wallet popup
-          they weren't expecting. */}
-      <ol className="mt-6 space-y-1.5 rounded-2xl border-2 border-dashed border-ink/15 bg-paper px-4 py-3">
+      {/* Follow first, and say so before the wallet popup appears: people
+          abandon a signature request they weren't expecting. */}
+      <div
+        className={`mt-6 rounded-2xl border-2 p-4 transition-colors ${
+          followed ? "border-grass/70 bg-grass/10" : "border-ink/12 bg-white"
+        }`}
+      >
+        <p className="flex items-center gap-2 text-sm font-extrabold">
+          <span
+            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 border-ink font-mono text-[10px] ${
+              followed ? "bg-grass" : "bg-white text-ink/50"
+            }`}
+          >
+            {followed ? <FiCheck className="h-3 w-3" /> : "1"}
+          </span>
+          Follow @{X_ACCOUNT}
+        </p>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <a
+            href={followUrl()}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 rounded-full border-2 border-ink bg-white px-3 py-1.5 text-[11px] font-extrabold transition-transform duration-150 hover:-translate-y-0.5"
+          >
+            Open X
+            <FiArrowUpRight className="h-3 w-3" />
+          </a>
+
+          <button
+            type="button"
+            onClick={() => onFollowed(!followed)}
+            aria-pressed={followed}
+            className={`rounded-full border-2 border-ink px-3 py-1.5 text-[11px] font-extrabold transition-transform duration-150 hover:-translate-y-0.5 ${
+              followed ? "bg-grass text-ink" : "bg-gold text-ink"
+            }`}
+          >
+            {followed ? "Following" : "I followed"}
+          </button>
+        </div>
+      </div>
+
+      <ol className="mt-3 space-y-1.5 rounded-2xl border-2 border-dashed border-ink/15 bg-paper px-4 py-3">
         <li className="flex gap-2 text-xs text-ink/70">
-          <span className="font-mono text-ink/40">1.</span>
+          <span className="font-mono text-ink/40">2.</span>
           Connect the wallet holding your {community.name}
         </li>
         <li className="flex gap-2 text-xs text-ink/70">
-          <span className="font-mono text-ink/40">2.</span>
+          <span className="font-mono text-ink/40">3.</span>
           Sign a message to prove it&rsquo;s yours
         </li>
       </ol>
 
       <button
         type="submit"
-        disabled={!open || status === "checking"}
+        disabled={!open || !followed || status === "checking"}
         className="inked mt-5 flex w-full items-center justify-center gap-2 rounded-full bg-gold px-6 py-4 text-xs font-extrabold tracking-[0.16em] text-ink uppercase transition-transform duration-200 enabled:hover:-translate-y-0.5 enabled:active:translate-y-1 enabled:active:shadow-[0_2px_0_0_var(--ink)] disabled:cursor-not-allowed disabled:opacity-45"
       >
         {!open ? (
           "Every spot is claimed"
+        ) : !followed ? (
+          <>
+            <FiLock className="h-3.5 w-3.5" />
+            Follow to unlock
+          </>
         ) : status === "checking" ? (
           <>
             <FiLoader className="h-3.5 w-3.5 animate-spin" />
