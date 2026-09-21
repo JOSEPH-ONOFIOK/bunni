@@ -23,7 +23,7 @@
  * can be checked against the repo without guessing from behaviour — the whole
  * reason the breakdown endpoint went unnoticed as missing for three rounds.
  */
-var SCRIPT_VERSION = 4;
+var SCRIPT_VERSION = 5;
 
 /** Tab the entries live on. Created on first write if missing. */
 var SHEET_NAME = 'Allowlist';
@@ -45,6 +45,9 @@ var GTD_HEADERS = ['Wallet', 'Community'];
  * than a filter over two flows that happen to share a sheet. Allowlist still
  * records every claim as well, which is what the 1,111 cap counts.
  */
+/** Spots on offer. The claim refuses once this many have been taken. */
+var CLAIM_CAP = 1111;
+
 var CLAIMED_SHEET = 'CLAIMED';
 var CLAIMED_HEADERS = [
   'Claimed At',
@@ -100,6 +103,13 @@ function doGet(e) {
       return json({ byCommunity: countByCommunity(p.breakdown) });
     }
 
+    // ?overcap lists the claims past the cap without touching anything, so
+    // they can be looked at before the destructive step.
+    if (p.overcap !== undefined) {
+      var extras = claimsOverCap();
+      return json({ cap: CLAIM_CAP, over: extras.length, claims: extras });
+    }
+
     return json({ count: p.source ? countBySource(p.source) : countEntries() });
   } catch (err) {
     return json({ error: String(err) });
@@ -128,6 +138,11 @@ function doPost(e) {
       return json(writeGtd(body.rows || [], body.replace === true));
     }
 
+    // Deletes the claims past the cap. Destructive, and deliberately a POST.
+    if (body.action === 'trimToCap') {
+      return json(trimToCapPost());
+    }
+
     var handle = String(body.handle || '').trim();
     var wallet = String(body.wallet || '').trim();
     var inviteCode = String(body.inviteCode || '').trim();
@@ -144,6 +159,18 @@ function doPost(e) {
 
     var sheet = getSheet();
     var rows = sheet.getLastRow() - 1; // minus the header row
+
+    /**
+     * The cap, enforced here rather than by the caller.
+     *
+     * The site checks it too, but a check over the network is read-then-write
+     * with a gap in between: under load every request reads the same count and
+     * every one of them proceeds. Inside this lock the count is the count, so
+     * the 1,112th claim cannot exist.
+     */
+    if (source === 'claim' && countBySource('claim') >= CLAIM_CAP) {
+      return json({ error: 'capped' });
+    }
 
     if (rows > 0) {
       // Both key columns in one read: fetching the whole sheet per submission
@@ -288,6 +315,74 @@ function gtdCommunitiesFor(wallet) {
     }
   }
   return out;
+}
+
+/**
+ * Lists the claims beyond the cap, newest first, so they can be reviewed
+ * before anything is deleted. Read-only.
+ */
+function claimsOverCap() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+  if (!sheet) return [];
+
+  var rows = sheet.getLastRow() - 1;
+  if (rows < 1) return [];
+
+  var sourceCol = HEADERS.indexOf('Source') + 1;
+  var values = sheet.getRange(2, 1, rows, HEADERS.length).getValues();
+
+  // Row numbers of every claim, in the order they were written.
+  var claims = [];
+  for (var i = 0; i < values.length; i++) {
+    if (String(values[i][sourceCol - 1] || 'quests').trim() === 'claim') {
+      claims.push({ row: i + 2, values: values[i] });
+    }
+  }
+
+  // Everything past the cap — the ones that should never have been accepted.
+  return claims.slice(CLAIM_CAP).map(function (c) {
+    return {
+      row: c.row,
+      joinedAt: String(c.values[HEADERS.indexOf('Joined At')]),
+      wallet: String(c.values[HEADERS.indexOf('Wallet')]),
+      community: String(c.values[HEADERS.indexOf('Community')]),
+      inviteCode: String(c.values[HEADERS.indexOf('Invite Code')]),
+    };
+  });
+}
+
+/**
+ * Deletes the claims beyond the cap.
+ *
+ * Rows are removed bottom-up: deleting a row shifts everything below it, so
+ * top-down would delete the wrong rows after the first.
+ */
+function trimToCapPost() {
+  var extras = claimsOverCap();
+  if (extras.length === 0) return { ok: true, removed: 0 };
+
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+  var wallets = [];
+
+  for (var i = extras.length - 1; i >= 0; i--) {
+    sheet.deleteRow(extras[i].row);
+    wallets.push(extras[i].wallet);
+  }
+
+  // The CLAIMED tab mirrors these, so it has to lose them too.
+  var claimed = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CLAIMED_SHEET);
+  if (claimed && claimed.getLastRow() > 1) {
+    var cRows = claimed.getLastRow() - 1;
+    var cVals = claimed.getRange(2, 1, cRows, CLAIMED_HEADERS.length).getValues();
+    var walletAt = CLAIMED_HEADERS.indexOf('Wallet');
+    for (var j = cVals.length - 1; j >= 0; j--) {
+      if (wallets.indexOf(String(cVals[j][walletAt])) !== -1) {
+        claimed.deleteRow(j + 2);
+      }
+    }
+  }
+
+  return { ok: true, removed: extras.length, wallets: wallets };
 }
 
 // --- CLAIMED: verified claims -----------------------------------------

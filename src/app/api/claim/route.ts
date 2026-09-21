@@ -127,7 +127,10 @@ export async function POST(req: NextRequest) {
     const result = await submitEntry(submission);
 
     if ("error" in result) {
-      return NextResponse.json({ error: result.error }, { status: 409 });
+      // The sheet refusing on the cap is not a conflict with this request's
+      // data; it means the door shut while this one was in flight.
+      const status = result.error === "Every spot is claimed." ? 403 : 409;
+      return NextResponse.json({ error: result.error }, { status });
     }
 
     return NextResponse.json({

@@ -107,6 +107,9 @@ async function submitToSheet(
 
   const data = await res.json();
 
+  if (data.error === "capped") {
+    return { error: "Every spot is claimed." };
+  }
   if (data.error === "duplicate") {
     return { error: "That wallet is already on the list." };
   }
