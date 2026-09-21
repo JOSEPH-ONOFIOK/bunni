@@ -156,7 +156,19 @@ export async function claimsByCommunity(): Promise<Record<string, number>> {
     const res = await fetch(target, { cache: "no-store" });
     if (!res.ok) throw new Error(`Sheets webhook returned ${res.status}`);
     const data = await res.json();
-    return data.byCommunity ?? {};
+
+    // An Apps Script deployment without the breakdown branch answers an
+    // unknown parameter with the plain count, so `byCommunity` is simply
+    // absent. Defaulting to {} there would render every ring at 0% — a
+    // confident, wrong answer. Throwing surfaces it as unknown instead, and
+    // the portal leaves the rings blank.
+    if (!data || typeof data.byCommunity !== "object" || data.byCommunity === null) {
+      throw new Error(
+        "The deployed Apps Script has no breakdown endpoint; redeploy Code.gs.",
+      );
+    }
+
+    return data.byCommunity as Record<string, number>;
   }
 
   const entries = await readLocalEntries();
