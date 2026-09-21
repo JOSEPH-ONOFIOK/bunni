@@ -22,7 +22,7 @@ import path from "node:path";
 
 const OUT_DIR = path.join(process.cwd(), "data", "snapshots");
 
-/** Alchemy's network names for the two chains the Furnace spans. */
+/** Alchemy's network names for the two chains the collections span. */
 const NETWORKS = {
   robinhood: "robinhood-mainnet",
   ethereum: "eth-mainnet",

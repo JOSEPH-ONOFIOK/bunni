@@ -68,9 +68,76 @@ export const KNOWN_WALLETS = [
   { name: "Phantom", url: "https://phantom.app/download" },
 ] as const;
 
+/**
+ * The provider to use when the caller hasn't picked one.
+ *
+ * EIP-6963 first: with two wallets installed they fight over
+ * `window.ethereum`, and whichever won the race is not necessarily the one
+ * holding the NFT. An announced provider is a wallet that actually said it was
+ * here. `window.ethereum` stays as the fallback for wallets that never
+ * announce — which includes most in-app browsers.
+ */
 export function getProvider(): Eip1193Provider | null {
   if (typeof window === "undefined") return null;
+
+  const announced = announcedProviders();
+  if (announced.length > 0) return announced[0].provider;
+
   return window.ethereum ?? null;
+}
+
+/**
+ * Wallets that have announced themselves so far.
+ *
+ * Kept as a module-level list because announcements fire once, when asked —
+ * a component mounting later would otherwise see none and conclude there is no
+ * wallet. The request is re-dispatched on each read, which is cheap and makes
+ * a late-injecting wallet discoverable rather than permanently invisible.
+ */
+const announced = new Map<string, DiscoveredWallet>();
+
+function announcedProviders(): DiscoveredWallet[] {
+  if (typeof window === "undefined") return [];
+
+  if (!listening) {
+    listening = true;
+    window.addEventListener("eip6963:announceProvider", (event: Event) => {
+      const detail = (event as AnnounceEvent).detail;
+      if (detail?.info?.rdns) announced.set(detail.info.rdns, detail);
+    });
+  }
+
+  window.dispatchEvent(new Event("eip6963:requestProvider"));
+  return [...announced.values()];
+}
+
+let listening = false;
+
+/** Every wallet found, for a picker. */
+export function availableWallets(): DiscoveredWallet[] {
+  return announcedProviders();
+}
+
+/**
+ * Whether this browser can connect at all.
+ *
+ * A phone's Safari or Chrome has no wallet in it: the way in is the wallet's
+ * own in-app browser. Saying so beats "no wallet found", which reads like the
+ * site is broken.
+ */
+export function walletEnvironment(): "ready" | "none" {
+  if (typeof window === "undefined") return "none";
+  return announcedProviders().length > 0 || window.ethereum ? "ready" : "none";
+}
+
+/** A deep link that reopens this page inside a wallet's own browser. */
+export function mobileDeepLinks(url: string) {
+  const bare = url.replace(/^https?:\/\//, "");
+  return [
+    { name: "MetaMask", url: `https://metamask.app.link/dapp/${bare}` },
+    { name: "Coinbase Wallet", url: `https://go.cb-w.com/dapp?cb_url=${encodeURIComponent(url)}` },
+    { name: "Rainbow", url: `https://rnbwapp.com/dapp?url=${encodeURIComponent(url)}` },
+  ];
 }
 
 export const hasWallet = () => getProvider() !== null;
@@ -92,7 +159,11 @@ export async function readAccounts(target?: Eip1193Provider): Promise<string[]> 
  */
 export async function connect(target?: Eip1193Provider): Promise<string[]> {
   const provider = target ?? getProvider();
-  if (!provider) throw new Error("No wallet found in this browser.");
+  if (!provider) {
+    throw new Error(
+      "No wallet in this browser. On a phone, open this page from inside your wallet's browser.",
+    );
+  }
 
   try {
     return (await provider.request({ method: "eth_requestAccounts" })) as string[];

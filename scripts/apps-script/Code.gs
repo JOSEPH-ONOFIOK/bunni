@@ -29,7 +29,7 @@ var SCRIPT_VERSION = 3;
 var SHEET_NAME = 'Allowlist';
 
 /**
- * The eligibility list: every wallet holding one of the Furnace collections,
+ * The eligibility list: every wallet holding one of the listed collections,
  * and which collection. Written by scripts/push-gtd.mjs from the snapshots.
  *
  * This is not the claim list. Claims land in Allowlist with source=claim, and

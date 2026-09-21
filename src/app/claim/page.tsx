@@ -3,7 +3,7 @@ import { ClaimPortal } from "@/components/ClaimPortal";
 export const metadata = {
   title: "Claim your spot",
   description:
-    "Free-mint spots for Furnace communities. Pick your community, connect the wallet that holds it, and the spot is yours.",
+    "Free-mint spots for holders. Pick your community, connect the wallet that holds it, and the spot is yours.",
 };
 
 // The claim reads live counts and snapshots, so it must never be prerendered

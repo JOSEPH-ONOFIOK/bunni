@@ -5,6 +5,7 @@ import {
   connect as connectWallet,
   getProvider,
   readAccounts,
+  walletEnvironment,
 } from "@/lib/wallet";
 
 /**
@@ -28,6 +29,9 @@ export type ClaimWallet = {
   holds: string[] | null;
   checking: boolean;
   error: string | null;
+  /** False when this browser has no wallet in it at all — a phone's Safari,
+      say — so the UI can offer a way in rather than a dead end. */
+  hasWallet: boolean;
   connect: () => Promise<string | null>;
   disconnect: () => void;
 };
@@ -37,6 +41,25 @@ export function useClaimWallet(): ClaimWallet {
   const [holds, setHolds] = useState<string[] | null>(null);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  /**
+   * Assumed true until proven otherwise.
+   *
+   * Wallets inject at their own pace, and a button that says "no wallet" on
+   * first paint and changes its mind a moment later is worse than one that
+   * finds out when pressed.
+   */
+  const [hasWallet, setHasWallet] = useState(true);
+
+  useEffect(() => {
+    // Re-checked after a beat, because extensions commonly inject after the
+    // first paint and would otherwise be missed.
+    const id = setTimeout(
+      () => setHasWallet(walletEnvironment() === "ready"),
+      600,
+    );
+    return () => clearTimeout(id);
+  }, []);
 
   // Restore a previous session, but only if the wallet still agrees: a stored
   // address the wallet has since disconnected would show a connected state
@@ -158,5 +181,5 @@ export function useClaimWallet(): ClaimWallet {
     } catch {}
   }, []);
 
-  return { address, holds, checking, error, connect, disconnect };
+  return { address, holds, checking, error, hasWallet, connect, disconnect };
 }

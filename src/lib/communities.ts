@@ -1,8 +1,8 @@
 /**
- * The Furnace on Robinhood — the communities whose holders can claim a spot.
+ * The communities on Robinhood whose holders can claim a spot.
  *
- * Normies and NPC are deliberately absent: the Furnace lineup has sixteen, this
- * claim is open to sixteen: the Furnace lineup less Normies and NPC, plus
+ * Normies and NPC are deliberately absent from the original lineup; this
+ * claim is open to sixteen: that lineup less Normies and NPC, plus
  * Stonk Interns and Clickihood.
  */
 
@@ -14,7 +14,7 @@ export type Community = {
   /** The NFT contract holders are read from. */
   contract: string;
   /**
-   * Which chain that contract lives on. Everything in the Furnace is on
+   * Which chain that contract lives on. Everything here is on
    * Robinhood Chain except Blokyz, whose original collection is on Ethereum —
    * so the snapshot script has to point at a different RPC for it.
    */

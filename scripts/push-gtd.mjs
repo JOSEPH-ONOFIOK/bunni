@@ -5,7 +5,7 @@
  *   node scripts/push-gtd.mjs --dry-run  # show what would be sent
  *
  * GTD is the eligibility list: every wallet that holds one of the fourteen
- * Furnace collections, and which collection it holds. It is not the claim
+ * listed collections, and which collection it holds. It is not the claim
  * list — claims land in Allowlist with source=claim, and the 1,111 cap counts
  * those.
  *
