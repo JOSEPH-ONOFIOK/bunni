@@ -18,6 +18,13 @@
  * Setup is in README.md next to this file.
  */
 
+/**
+ * Bumped whenever this file changes. `?version` returns it, so a deployment
+ * can be checked against the repo without guessing from behaviour — the whole
+ * reason the breakdown endpoint went unnoticed as missing for three rounds.
+ */
+var SCRIPT_VERSION = 3;
+
 /** Tab the entries live on. Created on first write if missing. */
 var SHEET_NAME = 'Allowlist';
 
@@ -62,6 +69,11 @@ function doGet(e) {
     // ?wallet=0x… asks whether that wallet is on the GTD list, and for which
     // communities. This is what the claim portal checks before letting a
     // holder through.
+    // ?version says which copy is deployed.
+    if (p.version !== undefined) {
+      return json({ version: SCRIPT_VERSION });
+    }
+
     if (p.wallet) {
       return json({ communities: gtdCommunitiesFor(p.wallet) });
     }
