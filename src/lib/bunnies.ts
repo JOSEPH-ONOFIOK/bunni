@@ -25,10 +25,11 @@ export const DROP = {
    * the same moment for everyone, whatever timezone they open the page in, and
    * the countdown is a real figure rather than a fresh 24h per visitor.
    *
-   * Set 2026-09-19, to run 48 hours. Once it passes, every countdown on the
-   * site reads "Allowlist closed" on its own; move this and redeploy to extend.
+   * Extended 2026-09-21 by another 24 hours, after the first window closed.
+   * Once it passes, every countdown on the site reads "Allowlist closed" on
+   * its own; move this and redeploy to extend again.
    */
-  closesAt: "2026-09-21T15:00:00Z",
+  closesAt: "2026-09-22T20:00:00Z",
 } as const;
 
 /** The headline the drop is announced with. */
