@@ -21,6 +21,16 @@
 /** Tab the entries live on. Created on first write if missing. */
 var SHEET_NAME = 'Allowlist';
 
+/**
+ * The eligibility list: every wallet holding one of the Furnace collections,
+ * and which collection. Written by scripts/push-gtd.mjs from the snapshots.
+ *
+ * This is not the claim list. Claims land in Allowlist with source=claim, and
+ * the 1,111 cap counts those — a wallet being here only means it may claim.
+ */
+var GTD_SHEET = 'GTD';
+var GTD_HEADERS = ['Wallet', 'Community'];
+
 var HEADERS = [
   'Joined At',
   'Handle',
@@ -47,8 +57,16 @@ function doGet(e) {
     // The site polls this for the "N already in" counter. `?source=claim`
     // narrows it to one flow, which is how the claim portal's cap stays
     // honest while both doors write to the same sheet.
-    var source = e && e.parameter ? e.parameter.source : null;
-    return json({ count: source ? countBySource(source) : countEntries() });
+    var p = (e && e.parameter) || {};
+
+    // ?wallet=0x… asks whether that wallet is on the GTD list, and for which
+    // communities. This is what the claim portal checks before letting a
+    // holder through.
+    if (p.wallet) {
+      return json({ communities: gtdCommunitiesFor(p.wallet) });
+    }
+
+    return json({ count: p.source ? countBySource(p.source) : countEntries() });
   } catch (err) {
     return json({ error: String(err) });
   }
@@ -69,6 +87,11 @@ function doPost(e) {
 
     if (SHARED_SECRET && body.secret !== SHARED_SECRET) {
       return json({ error: 'unauthorised' });
+    }
+
+    // Bulk load of the eligibility list, rather than a single signup.
+    if (body.action === 'gtd') {
+      return json(writeGtd(body.rows || [], body.replace === true));
     }
 
     var handle = String(body.handle || '').trim();
@@ -162,6 +185,67 @@ function countEntries() {
   // No tab yet means nobody has joined; don't create one just to count.
   if (!sheet) return 0;
   return Math.max(0, sheet.getLastRow() - 1);
+}
+
+// --- GTD: the eligibility list ----------------------------------------
+
+function getGtdSheet() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(GTD_SHEET);
+  if (!sheet) sheet = ss.insertSheet(GTD_SHEET);
+
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(GTD_HEADERS);
+    sheet.getRange(1, 1, 1, GTD_HEADERS.length).setFontWeight('bold');
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+/**
+ * Appends a batch of [wallet, community] rows, clearing first when asked.
+ * Written with one setValues() call rather than appendRow per line: tens of
+ * thousands of individual appends is the shape that times Apps Script out.
+ */
+function writeGtd(rows, replace) {
+  var sheet = getGtdSheet();
+
+  if (replace) {
+    var had = sheet.getLastRow();
+    // deleteRows, not clearContent: clearing empties the cells but leaves the
+    // rows behind, so getLastRow() keeps counting them and the next append
+    // lands past a block of blanks.
+    if (had > 1) sheet.deleteRows(2, had - 1);
+  }
+
+  if (rows.length > 0) {
+    var start = Math.max(sheet.getLastRow() + 1, 2);
+    sheet.getRange(start, 1, rows.length, GTD_HEADERS.length).setValues(rows);
+  }
+
+  return { ok: true, added: rows.length, total: Math.max(0, sheet.getLastRow() - 1) };
+}
+
+/** Which communities a wallet holds, or [] if it holds none. */
+function gtdCommunitiesFor(wallet) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(GTD_SHEET);
+  if (!sheet) return [];
+
+  var rows = sheet.getLastRow() - 1;
+  if (rows < 1) return [];
+
+  var needle = String(wallet || '').trim().toLowerCase();
+  if (!/^0x[a-f0-9]{40}$/.test(needle)) return [];
+
+  var values = sheet.getRange(2, 1, rows, 2).getValues();
+  var out = [];
+  for (var i = 0; i < values.length; i++) {
+    if (String(values[i][0]).trim().toLowerCase() === needle) {
+      out.push(String(values[i][1]).trim());
+    }
+  }
+  return out;
 }
 
 /** Entries from one flow: 'claim' or 'quests'. */

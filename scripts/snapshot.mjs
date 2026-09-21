@@ -1,5 +1,5 @@
 /**
- * Build holder snapshots by replaying ERC-721 Transfer logs.
+ * Build holder snapshots for the claim portal.
  *
  *   node scripts/snapshot.mjs              # every community
  *   node scripts/snapshot.mjs cash-cats    # just one
@@ -7,182 +7,154 @@
  * Writes data/snapshots/<slug>.txt, one wallet per line — the format
  * src/lib/snapshots.ts reads.
  *
- * Ownership is derived rather than queried: replaying every Transfer in order
- * and keeping the last `to` per tokenId gives the current holder without
- * calling ownerOf() once per token, which would be tens of thousands of calls.
+ * Holders come from Alchemy's NFT API, which supports Robinhood Chain as
+ * `robinhood-mainnet` and returns a whole collection's owners in one paged
+ * call. The alternative is replaying every Transfer log from the chain's
+ * genesis: the public RPC caps a response at 10k logs, prunes historical state
+ * (so a contract's deployment block can't even be binary-searched), and
+ * rate-limits bursts — hours of work for something the API answers in seconds.
  *
- * The public RPC sits behind Cloudflare and rate-limits bursts, so requests are
- * spaced, retried with backoff, and progress is written as it goes — a run that
- * trips the limiter can be resumed rather than restarted.
+ * Needs ALCHEMY_API_KEY in .env.local.
  */
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-const TRANSFER =
-  "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+const OUT_DIR = path.join(process.cwd(), "data", "snapshots");
 
-const RPCS = {
-  robinhood: "https://rpc.mainnet.chain.robinhood.com",
-  ethereum: process.env.ETHEREUM_RPC_URL ?? "https://eth.llamarpc.com",
+/** Alchemy's network names for the two chains the Furnace spans. */
+const NETWORKS = {
+  robinhood: "robinhood-mainnet",
+  ethereum: "eth-mainnet",
 };
 
-const OUT_DIR = path.join(process.cwd(), "data", "snapshots");
-const STATE_DIR = path.join(process.cwd(), "data", ".snapshot-state");
+/** Burn addresses hold tokens but are nobody, so they never get a spot. */
+const BURN = new Set([
+  "0x0000000000000000000000000000000000000000",
+  "0x000000000000000000000000000000000000dead",
+]);
 
-/** Blocks per getLogs call. The chain caps a response at 10k logs. */
-const STEP = 2000;
-/** Pause between calls, to stay under the rate limiter. */
-const GAP_MS = 250;
+async function apiKey() {
+  if (process.env.ALCHEMY_API_KEY) return process.env.ALCHEMY_API_KEY.trim();
+  try {
+    const env = await readFile(path.join(process.cwd(), ".env.local"), "utf-8");
+    const line = env.split(/\r?\n/).find((l) => l.startsWith("ALCHEMY_API_KEY="));
+    if (line) return line.slice("ALCHEMY_API_KEY=".length).trim();
+  } catch {}
+  throw new Error("ALCHEMY_API_KEY is not set (put it in .env.local)");
+}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function rpc(url, method, params, attempt = 0) {
-  await sleep(GAP_MS);
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-      signal: AbortSignal.timeout(30000),
-    });
+/** Every owner of a collection, following the API's paging. */
+async function ownersOf(community, key) {
+  const base = `https://${NETWORKS[community.chain]}.g.alchemy.com/nft/v3/${key}/getOwnersForContract`;
+  const owners = new Set();
+  let pageKey;
 
-    const text = await res.text();
-    // A challenge page rather than JSON means the limiter has kicked in.
-    if (!text.startsWith("{")) throw new Error("rate-limited");
+  do {
+    const url = new URL(base);
+    url.searchParams.set("contractAddress", community.contract);
+    if (pageKey) url.searchParams.set("pageKey", pageKey);
 
-    const json = JSON.parse(text);
-    if (json.error) throw new Error(json.error.message);
-    return json.result;
-  } catch (err) {
-    if (attempt >= 6) throw err;
-    const wait = 2000 * 2 ** attempt;
-    process.stderr.write(`    ${err.message}; retrying in ${wait / 1000}s\n`);
-    await sleep(wait);
-    return rpc(url, method, params, attempt + 1);
-  }
+    let data;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const res = await fetch(url, { signal: AbortSignal.timeout(60000) });
+        if (res.status === 429) throw new Error("rate limited");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        data = await res.json();
+        break;
+      } catch (err) {
+        if (attempt >= 5) throw err;
+        const wait = 1500 * 2 ** attempt;
+        process.stderr.write(`    ${err.message}; retrying in ${wait / 1000}s\n`);
+        await sleep(wait);
+      }
+    }
+
+    for (const owner of data.owners ?? []) {
+      const addr = String(owner).toLowerCase();
+      if (!BURN.has(addr)) owners.add(addr);
+    }
+
+    pageKey = data.pageKey;
+    if (pageKey) await sleep(250);
+  } while (pageKey);
+
+  return owners;
 }
 
-/** Every Transfer for one contract, walked forward and folded into owners. */
-async function holdersOf(community, head) {
-  const url = RPCS[community.chain];
-  const owners = new Map(); // tokenId -> current owner
-
-  const statePath = path.join(STATE_DIR, `${community.slug}.json`);
-  let from = 0;
-
-  // Resume a run that was interrupted part-way.
-  try {
-    const saved = JSON.parse(await readFile(statePath, "utf-8"));
-    if (saved.head === head && Array.isArray(saved.owners)) {
-      for (const [id, who] of saved.owners) owners.set(id, who);
-      from = saved.nextBlock ?? 0;
-      process.stderr.write(`    resuming at block ${from}\n`);
-    }
-  } catch {}
-
-  for (let start = from; start <= head; start += STEP) {
-    const end = Math.min(start + STEP - 1, head);
-
-    const logs = await rpc(url, "eth_getLogs", [
-      {
-        address: community.contract,
-        fromBlock: "0x" + start.toString(16),
-        toBlock: "0x" + end.toString(16),
-        topics: [TRANSFER],
-      },
-    ]);
-
-    for (const log of logs) {
-      // Four topics means the tokenId is indexed: an ERC-721 transfer. Three
-      // means ERC-20, which has no per-token ownership to track.
-      if (log.topics.length !== 4) continue;
-      const to = "0x" + log.topics[2].slice(26).toLowerCase();
-      const tokenId = log.topics[3];
-      owners.set(tokenId, to);
-    }
-
-    if ((start / STEP) % 25 === 0) {
-      process.stderr.write(
-        `    ${start}/${head} · ${owners.size} tokens seen\n`,
-      );
-      await mkdir(STATE_DIR, { recursive: true });
-      await writeFile(
-        statePath,
-        JSON.stringify({ head, nextBlock: end + 1, owners: [...owners] }),
-      );
-    }
+/** The registry is TypeScript, so read it as text rather than importing it. */
+async function communities() {
+  const src = await readFile(
+    path.join(process.cwd(), "src/lib/communities.ts"),
+    "utf-8",
+  );
+  const out = [];
+  const re =
+    /id:\s*"([^"]+)",\s*slug:\s*"([^"]+)",\s*name:\s*"([^"]+)",\s*\n?\s*contract:\s*"([^"]+)",\s*chain:\s*"([^"]+)"/g;
+  let m;
+  while ((m = re.exec(src))) {
+    out.push({ id: m[1], slug: m[2], name: m[3], contract: m[4], chain: m[5] });
   }
-
-  const ZERO = "0x0000000000000000000000000000000000000000";
-  // Burned tokens land at the zero address and have no holder.
-  return new Set([...owners.values()].filter((a) => a !== ZERO));
+  return out;
 }
 
 async function main() {
-  const only = process.argv[2];
-  const { COMMUNITIES } = await import("../src/lib/communities.ts").catch(
-    async () => {
-      // The registry is TypeScript; read it as text when it can't be imported.
-      const src = await readFile(
-        path.join(process.cwd(), "src/lib/communities.ts"),
-        "utf-8",
-      );
-      const out = [];
-      const re =
-        /id:\s*"([^"]+)"[\s\S]*?slug:\s*"([^"]+)"[\s\S]*?name:\s*"([^"]+)"[\s\S]*?contract:\s*"([^"]+)"[\s\S]*?chain:\s*"([^"]+)"/g;
-      let m;
-      while ((m = re.exec(src))) {
-        out.push({
-          id: m[1],
-          slug: m[2],
-          name: m[3],
-          contract: m[4],
-          chain: m[5],
-        });
-      }
-      return { COMMUNITIES: out };
-    },
-  );
+  const key = await apiKey();
+  const all = await communities();
 
+  if (all.length === 0) {
+    throw new Error("No communities parsed from src/lib/communities.ts");
+  }
+
+  const only = process.argv[2];
   const targets = only
-    ? COMMUNITIES.filter((c) => c.slug === only || c.id === only)
-    : COMMUNITIES;
+    ? all.filter((c) => c.slug === only || c.id === only)
+    : all;
 
   if (targets.length === 0) {
-    console.error(`No community matches "${only}".`);
+    console.error(`No community matches "${only}". Known: ${all.map((c) => c.slug).join(", ")}`);
     process.exit(1);
   }
 
   await mkdir(OUT_DIR, { recursive: true });
 
-  const heads = {};
-  for (const chain of new Set(targets.map((c) => c.chain))) {
-    heads[chain] = parseInt(await rpc(RPCS[chain], "eth_blockNumber", []), 16);
-    console.error(`${chain} head block: ${heads[chain]}`);
-  }
+  let total = 0;
+  const failed = [];
 
   for (const community of targets) {
-    console.error(`\n${community.name} (${community.contract})`);
+    process.stderr.write(`${community.name.padEnd(18)} `);
     try {
-      const holders = await holdersOf(community, heads[community.chain]);
-      const file = path.join(OUT_DIR, `${community.slug}.txt`);
+      const owners = await ownersOf(community, key);
+      const list = [...owners].sort();
+
       await writeFile(
-        file,
+        path.join(OUT_DIR, `${community.slug}.txt`),
         `# ${community.name} — ${community.contract} on ${community.chain}\n` +
-          `# ${holders.size} holders, taken at block ${heads[community.chain]}\n` +
-          [...holders].sort().join("\n") +
+          `# ${list.length} holders, taken ${new Date().toISOString()}\n` +
+          list.join("\n") +
           "\n",
       );
-      console.error(`  -> ${holders.size} holders written`);
+
+      total += list.length;
+      process.stderr.write(`${list.length} holders\n`);
     } catch (err) {
-      console.error(`  !! failed: ${err.message}`);
-      console.error(`     re-run to resume: node scripts/snapshot.mjs ${community.slug}`);
+      process.stderr.write(`FAILED: ${err.message}\n`);
+      failed.push(community.slug);
     }
+    await sleep(300);
+  }
+
+  console.error(`\n${total} wallets across ${targets.length - failed.length} communities.`);
+  if (failed.length) {
+    console.error(`Failed: ${failed.join(", ")} — re-run with that slug to retry.`);
+    process.exit(1);
   }
 }
 
 main().catch((err) => {
-  console.error(err);
+  console.error(err.message);
   process.exit(1);
 });

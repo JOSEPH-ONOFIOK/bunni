@@ -79,17 +79,52 @@ export function invalidateSnapshots() {
   cache = null;
 }
 
+/**
+ * The GTD tab, asked directly.
+ *
+ * The sheet is the list people can see and you can edit, so it wins: a wallet
+ * added or removed there takes effect without a redeploy. The committed files
+ * are the fallback for when the sheet is unreachable, which is better than
+ * refusing every holder because Apps Script had a bad minute.
+ */
+async function gtdCommunities(wallet: string): Promise<string[] | null> {
+  const webhook = process.env.GOOGLE_SHEETS_WEBAPP_URL;
+  if (!webhook) return null;
+
+  try {
+    const url = new URL(webhook);
+    url.searchParams.set("wallet", wallet.trim().toLowerCase());
+
+    const res = await fetch(url, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return null;
+
+    const data = await res.json();
+    return Array.isArray(data.communities) ? data.communities.map(String) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Is this wallet in the given community's snapshot? */
 export async function isHolder(
   slug: string,
   wallet: string,
 ): Promise<boolean> {
+  const fromSheet = await gtdCommunities(wallet);
+  if (fromSheet) return fromSheet.includes(slug);
+
   const map = await load();
   return map.get(slug)?.has(wallet.trim().toLowerCase()) ?? false;
 }
 
 /** Every community this wallet appears in — used to explain a failed claim. */
 export async function communitiesFor(wallet: string): Promise<string[]> {
+  const fromSheet = await gtdCommunities(wallet);
+  if (fromSheet) return fromSheet;
+
   const map = await load();
   const needle = wallet.trim().toLowerCase();
   return [...map.entries()]
