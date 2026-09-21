@@ -19,8 +19,9 @@ export const QUOTE_PHRASE =
  * the previous one, stranding entries that were honestly earned; keeping the
  * old id here costs nothing and keeps those people valid.
  *
- *   [0] https://x.com/bunionrh/status/2101356079699439883  (current pin)
- *   [1] https://x.com/bunionrh/status/2101298583387451632  (first announcement)
+ *   [0] https://x.com/bunionrh/status/2102120991937704343  (current pin)
+ *   [1] https://x.com/bunionrh/status/2101356079699439883
+ *   [2] https://x.com/bunionrh/status/2101298583387451632  (first announcement)
  *
  * Plain constants with no env override. They are public the moment the page
  * renders, so there is nothing to hide, and an override meant a stale value
@@ -28,6 +29,7 @@ export const QUOTE_PHRASE =
  * deployed links going wrong while local looked fine. Change them here.
  */
 export const ACCEPTED_POST_IDS = [
+  "2102120991937704343",
   "2101356079699439883",
   "2101298583387451632",
 ] as const;
